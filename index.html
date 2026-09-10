@@ -1,1 +1,2522 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>어린이집 긴급 석식 통합관리 시스템 (단독 실행형)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts: Noto Sans KR -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Noto Sans KR"', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Noto Sans KR', sans-serif; background-color: #f8fafc; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    
+    /* 인쇄(Print) 모드 정밀 분기 스타일 */
+    @media print {
+      header, nav, #toast-container, .no-print, .no-admin-print { display: none !important; }
+      body { background: white !important; }
+      
+      /* 1. 고지서/영수증 모달 인쇄 시 */
+      body.printing-bill #bill-modal { display: block !important; position: static !important; }
+      body.printing-bill body * { visibility: hidden; }
+      body.printing-bill #printable-bill-sheet, 
+      body.printing-bill #printable-bill-sheet * { visibility: visible; }
+      body.printing-bill #printable-bill-sheet {
+        position: absolute; left: 0; top: 0; width: 100% !important; border: 1px solid #ccc !important;
+      }
+
+      /* 2. 담임교사 당일 배식 명부 인쇄 시 */
+      body.printing-roster #view-teacher { display: block !important; }
+      body.printing-roster #view-parent, 
+      body.printing-roster #view-admin,
+      body.printing-roster #auth-modal,
+      body.printing-roster #bill-modal { display: none !important; }
+      body.printing-roster table { font-size: 11px; width: 100%; }
+
+      /* 3. 총괄관리자 전체 배식 명부 인쇄 시 */
+      body.printing-admin-roster #view-admin,
+      body.printing-admin-roster #admin-subtab-roster-view { display: block !important; }
+      body.printing-admin-roster #view-parent,
+      body.printing-admin-roster #view-teacher,
+      body.printing-admin-roster #admin-subtab-settle-view,
+      body.printing-admin-roster #admin-subtab-config-view { display: none !important; }
+      body.printing-admin-roster table { font-size: 11px; width: 100%; }
+
+      /* 4. 월말 결산표 인쇄 시 */
+      body.printing-settle #view-admin, 
+      body.printing-settle #admin-subtab-settle-view { display: block !important; }
+      body.printing-settle #view-parent, 
+      body.printing-settle #view-teacher,
+      body.printing-settle #admin-subtab-roster-view,
+      body.printing-settle #admin-subtab-config-view { display: none !important; }
+    }
+  </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-200 text-xl font-bold">
+            <i class="fa-solid fa-utensils"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="text-base sm:text-lg font-bold text-slate-900 leading-tight" id="header-center-name">현대모비스마북어린이집</h1>
+              <span class="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">단독 실행형</span>
+            </div>
+            <p class="text-xs text-slate-500 hidden sm:block">긴급 석식 통합 돌봄 및 식대 정산 관리 시스템</p>
+          </div>
+        </div>
+
+        <!-- 3대 역할 탭 전환 -->
+        <nav class="flex items-center space-x-1 sm:space-x-1.5 overflow-x-auto py-1">
+          <button id="nav-tab-parent" onclick="switchRole('parent')" class="tab-btn px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center space-x-1.5 bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">
+            <i class="fa-solid fa-child"></i>
+            <span>학부모 신청</span>
+          </button>
+          <button id="nav-tab-teacher" onclick="switchRole('teacher')" class="tab-btn px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-all flex items-center space-x-1.5 whitespace-nowrap">
+            <i class="fa-solid fa-clipboard-user text-sky-600"></i>
+            <span>담임교사 열람</span>
+            <i id="lock-icon-teacher" class="fa-solid fa-lock text-[10px] text-slate-400 ml-0.5"></i>
+          </button>
+          <button id="nav-tab-admin" onclick="switchRole('admin')" class="tab-btn px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-all flex items-center space-x-1.5 whitespace-nowrap">
+            <i class="fa-solid fa-file-invoice-dollar text-emerald-600"></i>
+            <span>총괄 관리자</span>
+            <i id="lock-icon-admin" class="fa-solid fa-lock text-[10px] text-slate-400 ml-0.5"></i>
+          </button>
+
+          <!-- 로그인 세션 상태 뱃지 & 로그아웃 -->
+          <div id="auth-status-bar" class="hidden items-center pl-2 ml-1 border-l border-slate-200">
+            <span id="auth-user-badge" class="text-xs font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-700 whitespace-nowrap mr-1"></span>
+            <button onclick="handleLogout()" title="로그아웃" class="text-xs px-2 py-1 text-rose-600 hover:bg-rose-50 rounded-lg transition whitespace-nowrap font-medium flex items-center gap-1">
+              <i class="fa-solid fa-right-from-bracket"></i>
+              <span class="hidden sm:inline">로그아웃</span>
+            </button>
+          </div>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+
+    <!-- VIEW 1: 학부모 긴급 석식 신청 화면 -->
+    <div id="view-parent" class="space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- 공지 카드 & 실시간 카운트다운 타이머 -->
+        <div class="lg:col-span-2 bg-gradient-to-br from-amber-500 via-amber-600 to-orange-600 rounded-2xl p-6 text-white shadow-lg shadow-amber-500/10 flex flex-col justify-between">
+          <div>
+            <!-- 상단 상태 라벨 및 실시간 카운트다운 알림 위젯 -->
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white/20 text-xs font-semibold backdrop-blur-sm">
+                <span id="countdown-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span id="banner-urgent-notice">긴급 돌봄 석식 공지</span>
+              </div>
+              
+              <!-- 카운트다운 상태 뱃지 -->
+              <div id="countdown-status-pill" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/25 backdrop-blur-md shadow-sm">
+                <i class="fa-regular fa-clock"></i>
+                <span id="countdown-status-text">접수 진행 중</span>
+                <span class="text-[10px] opacity-80" id="countdown-deadline-info"></span>
+              </div>
+            </div>
+
+            <h2 class="text-xl sm:text-2xl font-bold mb-2">야근·긴급 상황 학부모님을 위한 석식 지원</h2>
+            <p class="text-amber-100 text-sm leading-relaxed mb-4">
+              신선한 식재료 준비 및 안전한 급식 운영을 위해 <strong class="text-white underline">매주 주간 선착순 <span class="max-cap-display">20</span>명</strong>까지만 접수됩니다. 정원 도달 시 마감됩니다.
+            </p>
+
+            <!-- 실시간 초단위 카운트다운 타이머 디스플레이 -->
+            <div class="bg-black/20 rounded-xl p-3 backdrop-blur-sm border border-white/20 mb-4 inline-flex items-center gap-2 sm:gap-4">
+              <span class="text-xs font-bold text-amber-200 mr-1 hidden sm:inline"><i class="fa-solid fa-stopwatch mr-1"></i>신청 마감까지:</span>
+              <div class="flex items-center gap-1.5 text-center font-mono">
+                <div class="bg-white/20 px-2 py-1 rounded-lg">
+                  <span id="timer-days" class="text-base sm:text-xl font-extrabold text-white">00</span>
+                  <span class="text-[9px] block text-amber-200 -mt-1 font-sans">일</span>
+                </div>
+                <span class="font-bold text-amber-300">:</span>
+                <div class="bg-white/20 px-2 py-1 rounded-lg">
+                  <span id="timer-hours" class="text-base sm:text-xl font-extrabold text-white">00</span>
+                  <span class="text-[9px] block text-amber-200 -mt-1 font-sans">시간</span>
+                </div>
+                <span class="font-bold text-amber-300">:</span>
+                <div class="bg-white/20 px-2 py-1 rounded-lg">
+                  <span id="timer-minutes" class="text-base sm:text-xl font-extrabold text-white">00</span>
+                  <span class="text-[9px] block text-amber-200 -mt-1 font-sans">분</span>
+                </div>
+                <span class="font-bold text-amber-300">:</span>
+                <div class="bg-white/20 px-2 py-1 rounded-lg">
+                  <span id="timer-seconds" class="text-base sm:text-xl font-extrabold text-amber-300">00</span>
+                  <span class="text-[9px] block text-amber-200 -mt-1 font-sans">초</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-white/20 text-xs sm:text-sm">
+            <div>
+              <span class="block text-amber-200 text-xs">석식 제공 시간</span>
+              <span class="font-bold" id="banner-meal-time">18:00 ~ 19:30</span>
+            </div>
+            <div>
+              <span class="block text-amber-200 text-xs">식대 기준 (1식)</span>
+              <span class="font-bold"><span id="banner-meal-price">4,500</span>원</span>
+            </div>
+            <div>
+              <span class="block text-amber-200 text-xs">취소 마감 기한</span>
+              <span class="font-bold" id="banner-cancel-deadline">당일 14:00까지</span>
+            </div>
+            <div>
+              <span class="block text-amber-200 text-xs">접수 운영 상태</span>
+              <span id="apply-status-tag" class="inline-flex items-center gap-1 font-bold text-emerald-300">
+                <i class="fa-solid fa-circle-check text-[10px]"></i> 정상 접수 중
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 실시간 정원 현황 카드 -->
+        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-bold text-slate-500" id="current-week-label">접수 현황</span>
+            <span id="capacity-badge" class="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800">
+              신청 가능
+            </span>
+          </div>
+
+          <div class="my-4 text-center">
+            <div class="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight flex items-baseline justify-center gap-1">
+              <span id="applied-count" class="text-amber-600 font-mono">0</span>
+              <span class="text-2xl text-slate-400 font-medium">/ <span class="max-cap-display">20</span>명</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">
+              잔여석: <strong id="remaining-count" class="text-emerald-600 font-bold">20</strong>자리 남음
+            </p>
+          </div>
+
+          <div>
+            <div class="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+              <div id="capacity-bar" class="bg-amber-500 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <div class="flex justify-between text-[11px] text-slate-400 mt-2">
+              <span>0%</span>
+              <span class="font-medium text-slate-500">선착순 <span class="max-cap-display">20</span>명 한정</span>
+              <span>100%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- 신청 폼 -->
+        <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
+          <div class="border-b border-slate-100 pb-4 mb-6 flex items-center justify-between">
+            <div>
+              <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <i class="fa-solid fa-pen-to-square text-amber-500"></i> 긴급 석식 신청서
+              </h3>
+              <p class="text-xs text-slate-500 mt-0.5">정확한 식수 파악을 위해 필수 정보를 빠짐없이 입력해 주세요.</p>
+            </div>
+            <span class="text-xs text-slate-400">* 표시는 필수 항목</span>
+          </div>
+
+          <form id="dinner-apply-form" onsubmit="handleApplySubmit(event)" class="space-y-5">
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">
+                신청 주차 선택 <span class="text-amber-500">*</span>
+              </label>
+              <select id="form-week" onchange="onWeekChange()" class="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition">
+              </select>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">
+                  소속 반 <span class="text-amber-500">*</span>
+                </label>
+                <select id="form-class" required class="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition">
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">
+                  원아 이름 <span class="text-amber-500">*</span>
+                </label>
+                <input type="text" id="form-child-name" required placeholder="예: 홍길이" class="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition">
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">
+                  보호자 성명 <span class="text-amber-500">*</span>
+                </label>
+                <input type="text" id="form-parent-name" required placeholder="예: 홍길동" class="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition">
+              </div>
+
+              <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1">
+                  보호자 비상연락처 <span class="text-amber-500">*</span>
+                </label>
+                <input type="tel" id="form-phone" required placeholder="010-1234-5678" pattern="[0-9]{3}-?[0-9]{3,4}-?[0-9]{4}" class="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">
+                석식 희망 요일 (다중 선택) <span class="text-amber-500">*</span>
+              </label>
+              <div class="grid grid-cols-5 gap-2 mt-2">
+                <label class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition text-center">
+                  <input type="checkbox" name="days" value="월요일" onchange="updateFormFeeCalculation()" class="w-4 h-4 text-amber-500 rounded focus:ring-amber-400">
+                  <span class="text-sm font-bold mt-1 text-slate-700">월</span>
+                  <span class="text-[10px] text-slate-400 day-date" data-offset="0"></span>
+                </label>
+                <label class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition text-center">
+                  <input type="checkbox" name="days" value="화요일" onchange="updateFormFeeCalculation()" class="w-4 h-4 text-amber-500 rounded focus:ring-amber-400">
+                  <span class="text-sm font-bold mt-1 text-slate-700">화</span>
+                  <span class="text-[10px] text-slate-400 day-date" data-offset="1"></span>
+                </label>
+                <label class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition text-center">
+                  <input type="checkbox" name="days" value="수요일" onchange="updateFormFeeCalculation()" class="w-4 h-4 text-amber-500 rounded focus:ring-amber-400">
+                  <span class="text-sm font-bold mt-1 text-slate-700">수</span>
+                  <span class="text-[10px] text-slate-400 day-date" data-offset="2"></span>
+                </label>
+                <label class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition text-center">
+                  <input type="checkbox" name="days" value="목요일" onchange="updateFormFeeCalculation()" class="w-4 h-4 text-amber-500 rounded focus:ring-amber-400">
+                  <span class="text-sm font-bold mt-1 text-slate-700">목</span>
+                  <span class="text-[10px] text-slate-400 day-date" data-offset="3"></span>
+                </label>
+                <label class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition text-center">
+                  <input type="checkbox" name="days" value="금요일" onchange="updateFormFeeCalculation()" class="w-4 h-4 text-amber-500 rounded focus:ring-amber-400">
+                  <span class="text-sm font-bold mt-1 text-slate-700">금</span>
+                  <span class="text-[10px] text-slate-400 day-date" data-offset="4"></span>
+                </label>
+              </div>
+            </div>
+
+            <!-- 실시간 식대 계산기 배너 -->
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs flex items-center justify-between text-amber-900">
+              <span class="font-medium flex items-center gap-1.5">
+                <i class="fa-solid fa-calculator text-amber-600"></i>
+                <span id="form-fee-calc-details">0일 선택 (1식 <span id="form-unit-price-display">4,500</span>원 기준)</span>
+              </span>
+              <span>예상 식대: <strong id="form-fee-total" class="text-base text-amber-700 font-extrabold font-mono">0원</strong></span>
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-slate-700 mb-1">
+                알레르기 유발 식품 및 귀가 예정 시간 (선택)
+              </label>
+              <textarea id="form-allergy" rows="2" placeholder="예: 난류/갑각류 알레르기 있음, 18:40 하원 예정 등" class="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition"></textarea>
+            </div>
+
+            <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs text-slate-600 flex items-start gap-2">
+              <input type="checkbox" id="form-agree" required class="mt-0.5 rounded text-amber-500">
+              <label for="form-agree" class="cursor-pointer">
+                당일 신선 식재료 준비 특성상 당일 <strong id="form-agree-deadline">14:00</strong> 이후 취소는 불가하며, 월말 실제 배식 완료 일수에 따른 정산 고지서 발급에 동의합니다.
+              </label>
+            </div>
+
+            <div>
+              <button type="submit" id="btn-submit-apply" class="w-full py-3.5 px-6 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-[0.99] text-white font-bold text-base shadow-lg shadow-amber-500/20 transition flex items-center justify-center space-x-2">
+                <i class="fa-solid fa-paper-plane"></i>
+                <span>선착순 긴급 석식 신청 접수하기</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- 실시간 접수 명단 (마스킹) -->
+        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col h-full">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+            <h4 class="font-bold text-slate-900 text-sm flex items-center gap-2">
+              <i class="fa-solid fa-list-check text-emerald-600"></i>
+              <span>이번 주 선착순 접수 현황</span>
+            </h4>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold" id="list-count-badge">0명</span>
+          </div>
+
+          <div class="flex-grow overflow-y-auto max-h-[380px] space-y-2 pr-1" id="applicant-list-container">
+          </div>
+
+          <div class="pt-3 border-t border-slate-100 mt-3 space-y-2 text-[11px] text-slate-500">
+            <button onclick="openParentLookupModal()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-receipt text-emerald-600"></i>
+              <span>내 아이 식대 결산 및 고지서 조회</span>
+            </button>
+            <div class="flex items-center justify-between text-slate-400">
+              <span><i class="fa-solid fa-shield-halved mr-1"></i>원아명 개인정보 마스킹</span>
+              <button onclick="refreshData()" class="text-amber-600 hover:underline flex items-center gap-1 font-medium">
+                <i class="fa-solid fa-rotate-right"></i> 새로고침
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 2: 담임교사 전용 반별 열람 & 출결 확인 화면 -->
+    <div id="view-teacher" class="hidden space-y-6">
+      <div class="bg-sky-50 border border-sky-200 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <span class="px-2.5 py-0.5 text-xs font-bold rounded-full bg-sky-200 text-sky-800 uppercase tracking-wide">교직원 전용 모드</span>
+          <h2 class="text-xl font-bold text-sky-950 mt-1">우리 반 석식 신청 원아 및 알레르기 안심 점검</h2>
+          <p class="text-xs text-sky-700 mt-0.5">담임 선생님께서는 당일 석식 원아 명단과 알레르기 식품, 식사 지도 및 하원 여부를 체크하실 수 있습니다.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="printTeacherRoster()" class="px-3.5 py-2 bg-white border border-sky-300 text-sky-700 hover:bg-sky-100 text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition">
+            <i class="fa-solid fa-print"></i>
+            <span>당일 배식표 인쇄</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 교사 필터 바 -->
+      <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div class="flex flex-wrap items-center gap-3">
+          <div>
+            <label class="text-xs font-bold text-slate-500 block mb-1">담당 반 선택:</label>
+            <select id="teacher-filter-class" onchange="renderTeacherRoster()" class="rounded-xl border border-slate-300 px-3 py-1.5 text-sm bg-white font-medium focus:ring-2 focus:ring-sky-500">
+              <option value="all">전체 반 통합 보기</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-bold text-slate-500 block mb-1">주차 선택:</label>
+            <select id="teacher-filter-week" onchange="renderTeacherRoster()" class="rounded-xl border border-slate-300 px-3 py-1.5 text-sm bg-white font-medium focus:ring-2 focus:ring-sky-500">
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-bold text-slate-500 block mb-1">배식 요일 필터:</label>
+            <select id="teacher-filter-day" onchange="renderTeacherRoster()" class="rounded-xl border border-slate-300 px-3 py-1.5 text-sm bg-white font-medium focus:ring-2 focus:ring-sky-500">
+              <option value="all">전체 요일 (주간 총괄)</option>
+              <option value="월요일">월요일</option>
+              <option value="화요일">화요일</option>
+              <option value="수요일">수요일</option>
+              <option value="목요일">목요일</option>
+              <option value="금요일">금요일</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="text-xs text-slate-500">
+          대상 원아: <strong id="teacher-roster-count" class="text-sky-600 text-sm">0</strong>명
+        </div>
+      </div>
+
+      <!-- 담임교사용 원아 명단 테이블 -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm text-slate-600">
+            <thead class="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+              <tr>
+                <th scope="col" class="px-5 py-3.5">반명</th>
+                <th scope="col" class="px-5 py-3.5">원아명 (실명)</th>
+                <th scope="col" class="px-5 py-3.5">보호자 / 비상연락처</th>
+                <th scope="col" class="px-5 py-3.5">신청 요일</th>
+                <th scope="col" class="px-5 py-3.5 text-rose-600">⚠️ 알레르기 및 특이사항</th>
+                <th scope="col" class="px-5 py-3.5 text-center">식사/배식 확인</th>
+                <th scope="col" class="px-5 py-3.5 text-center">하원 픽업</th>
+              </tr>
+            </thead>
+            <tbody id="teacher-roster-tbody" class="divide-y divide-slate-100">
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 3: 총괄 관리자 (전체 현황 & 결산 & 환경설정) -->
+    <div id="view-admin" class="hidden space-y-6">
+      <!-- 서브 탭 전환 버튼 -->
+      <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+        <div class="flex items-center space-x-2 overflow-x-auto py-1">
+          <button id="btn-subtab-roster" onclick="switchAdminSubtab('roster')" class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-emerald-600 text-white transition shadow-sm whitespace-nowrap">
+            <i class="fa-solid fa-list-check mr-1"></i> 전체 신청 및 실시간 배식 현황
+          </button>
+          <button id="btn-subtab-settle" onclick="switchAdminSubtab('settle')" class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition whitespace-nowrap">
+            <i class="fa-solid fa-calculator mr-1"></i> 월말 식대 결산 & 청구서 발급
+          </button>
+          <button id="btn-subtab-config" onclick="switchAdminSubtab('config')" class="px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition whitespace-nowrap">
+            <i class="fa-solid fa-gear mr-1"></i> 어린이집 범용 환경 설정
+          </button>
+        </div>
+        <span class="text-xs text-slate-400 hidden sm:inline"><i class="fa-solid fa-lock mr-1"></i>원장/관리자 전용 권한</span>
+      </div>
+
+      <!-- 서브탭 0: 전체 반 신청 및 실시간 배식 현황 -->
+      <div id="admin-subtab-roster-view" class="space-y-6">
+        <!-- 인쇄 전용 헤더 -->
+        <div class="hidden print:block text-center pb-3 border-b-2 border-slate-800 mb-4">
+          <h2 class="text-xl font-bold" id="admin-print-center-name">현대모비스마북어린이집</h2>
+          <p class="text-sm font-semibold">전체 긴급 석식 신청 및 배식·하원 종합 명부</p>
+          <p class="text-xs text-slate-500 mt-0.5" id="admin-print-meta-info"></p>
+        </div>
+
+        <!-- KPI 통계 카드 -->
+        <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 no-admin-print">
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="text-[11px] font-semibold text-slate-400 uppercase">신청 원아 (주간)</div>
+            <div class="text-xl sm:text-2xl font-extrabold text-slate-900 mt-1 flex items-baseline gap-1">
+              <span id="admin-stat-applied" class="text-amber-600 font-mono">0</span>
+              <span class="text-xs text-slate-400 font-normal">/ <span class="max-cap-display">20</span>명</span>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-1">선착순 등록</p>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="text-[11px] font-semibold text-slate-400 uppercase">잔여석</div>
+            <div class="text-xl sm:text-2xl font-extrabold text-emerald-600 mt-1 font-mono">
+              <span id="admin-stat-remaining">20</span><span class="text-xs font-normal text-slate-400 ml-0.5">석</span>
+            </div>
+            <p class="text-[10px] text-emerald-600 mt-1">신청 가능 자리</p>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="text-[11px] font-semibold text-slate-400 uppercase">조리 필요 식수</div>
+            <div class="text-xl sm:text-2xl font-extrabold text-sky-600 mt-1 font-mono">
+              <span id="admin-stat-meals">0</span><span class="text-xs font-normal text-slate-400 ml-0.5">식</span>
+            </div>
+            <p class="text-[10px] text-sky-600 mt-1">조리실 준비 식수</p>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-rose-200 bg-rose-50/20 shadow-sm">
+            <div class="text-[11px] font-semibold text-rose-700 uppercase">알레르기 원아</div>
+            <div class="text-xl sm:text-2xl font-extrabold text-rose-600 mt-1 font-mono">
+              <span id="admin-stat-allergy">0</span><span class="text-xs font-normal text-slate-400 ml-0.5">명</span>
+            </div>
+            <p class="text-[10px] text-rose-700 mt-1 font-medium">배식 주의 지도</p>
+          </div>
+
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm col-span-2 sm:col-span-1">
+            <div class="text-[11px] font-semibold text-slate-400 uppercase">배식 완료 진행률</div>
+            <div class="text-xl sm:text-2xl font-extrabold text-slate-900 mt-1 flex items-baseline gap-1 font-mono">
+              <span id="admin-stat-served" class="text-emerald-600">0</span>
+              <span class="text-xs text-slate-400 font-normal">/ <span id="admin-stat-served-total">0</span>식</span>
+            </div>
+            <p class="text-[10px] text-slate-500 mt-1">당일 식사 지도</p>
+          </div>
+        </div>
+
+        <!-- 필터 및 검색 바 -->
+        <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 no-admin-print">
+          <div class="flex flex-wrap items-center gap-3">
+            <div>
+              <label class="text-xs font-bold text-slate-500 block mb-1">주차 선택:</label>
+              <select id="admin-filter-week" onchange="renderAdminRoster()" class="rounded-xl border border-slate-300 px-3 py-1.5 text-xs sm:text-sm bg-white font-medium focus:ring-2 focus:ring-emerald-500">
+              </select>
+            </div>
+            <div>
+              <label class="text-xs font-bold text-slate-500 block mb-1">반 선택:</label>
+              <select id="admin-filter-class" onchange="renderAdminRoster()" class="rounded-xl border border-slate-300 px-3 py-1.5 text-xs sm:text-sm bg-white font-medium focus:ring-2 focus:ring-emerald-500">
+                <option value="all">전체 반</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs font-bold text-slate-500 block mb-1">요일 선택:</label>
+              <select id="admin-filter-day" onchange="renderAdminRoster()" class="rounded-xl border border-slate-300 px-3 py-1.5 text-xs sm:text-sm bg-white font-medium focus:ring-2 focus:ring-emerald-500">
+                <option value="all">전체 요일</option>
+                <option value="월요일">월요일</option>
+                <option value="화요일">화요일</option>
+                <option value="수요일">수요일</option>
+                <option value="목요일">목요일</option>
+                <option value="금요일">금요일</option>
+              </select>
+            </div>
+            <div class="flex-grow sm:flex-grow-0">
+              <label class="text-xs font-bold text-slate-500 block mb-1">원아/보호자 검색:</label>
+              <div class="relative">
+                <input type="text" id="admin-search-keyword" oninput="renderAdminRoster()" placeholder="원아명, 보호자, 연락처" class="w-full sm:w-44 rounded-xl border border-slate-300 pl-7 pr-3 py-1.5 text-xs sm:text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+                <i class="fa-solid fa-magnifying-glass text-slate-400 absolute left-2.5 top-2.5 text-xs"></i>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 self-end md:self-auto">
+            <button onclick="printAdminRoster()" class="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl shadow-sm flex items-center gap-1.5 transition">
+              <i class="fa-solid fa-print text-slate-500"></i>
+              <span>전체 배식 명부 인쇄</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 종합 명부 테이블 -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs sm:text-sm text-slate-600">
+              <thead class="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                <tr>
+                  <th scope="col" class="px-4 py-3.5 text-center w-12">No</th>
+                  <th scope="col" class="px-4 py-3.5">반명</th>
+                  <th scope="col" class="px-4 py-3.5">원아명 (실명)</th>
+                  <th scope="col" class="px-4 py-3.5">보호자 / 연락처</th>
+                  <th scope="col" class="px-4 py-3.5">신청 요일 (식수)</th>
+                  <th scope="col" class="px-4 py-3.5 text-rose-600">⚠️ 알레르기 및 특이사항</th>
+                  <th scope="col" class="px-4 py-3.5 text-center">식사/배식 확인</th>
+                  <th scope="col" class="px-4 py-3.5 text-center">하원 픽업</th>
+                  <th scope="col" class="px-4 py-3.5 text-center no-admin-print">관리</th>
+                </tr>
+              </thead>
+              <tbody id="admin-roster-tbody" class="divide-y divide-slate-100">
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 서브탭 1: 월말 식대 결산 및 청구서 발급 -->
+      <div id="admin-subtab-settle-view" class="hidden space-y-6">
+        <!-- 결산 통계 KPI 카드 -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">이달의 실 배식 완료 식수</div>
+            <div class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-2 flex items-baseline gap-1">
+              <span id="stat-total-meals">0</span><span class="text-sm font-normal text-slate-500">식</span>
+            </div>
+            <p class="text-xs text-emerald-600 mt-1"><i class="fa-solid fa-bowl-food mr-1"></i>실제 배식 확정 식수</p>
+          </div>
+
+          <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">석식 이용 원아 수</div>
+            <div class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-2 flex items-baseline gap-1">
+              <span id="stat-total-children">0</span><span class="text-sm font-normal text-slate-500">명</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">청구서 발급 대상 아동</p>
+          </div>
+
+          <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">1식당 단가 기준</div>
+            <div class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-2 flex items-baseline gap-1 font-mono">
+              <span id="stat-unit-price-display">4,500</span><span class="text-sm font-normal text-slate-500">원</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1">[환경설정] 탭에서 즉시 변경 가능</p>
+          </div>
+
+          <div class="bg-white p-5 rounded-2xl border border-emerald-200 bg-emerald-50/30 shadow-sm">
+            <div class="text-xs font-semibold text-emerald-700 uppercase tracking-wider">총 청구 식대합계</div>
+            <div class="text-2xl sm:text-3xl font-extrabold text-emerald-600 mt-2 flex items-baseline gap-1">
+              <span id="stat-total-amount">0</span><span class="text-sm font-normal text-slate-500">원</span>
+            </div>
+            <p class="text-xs text-emerald-700 mt-1 font-medium"><i class="fa-solid fa-coins mr-1"></i>수납 예정 총액</p>
+          </div>
+        </div>
+
+        <!-- 결산 필터 및 액션바 -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div class="p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
+            <div class="flex flex-wrap items-center gap-3">
+              <div>
+                <label class="text-xs font-bold text-slate-500 block mb-1">정산 월:</label>
+                <select id="filter-month" onchange="updateSettlementTable()" class="rounded-xl border border-slate-300 px-3 py-1.5 text-sm bg-white font-medium focus:ring-2 focus:ring-emerald-500">
+                </select>
+              </div>
+
+              <div>
+                <label class="text-xs font-bold text-slate-500 block mb-1">반 필터:</label>
+                <select id="filter-class" onchange="updateSettlementTable()" class="rounded-xl border border-slate-300 px-3 py-1.5 text-sm bg-white font-medium focus:ring-2 focus:ring-emerald-500">
+                  <option value="all">전체 반</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="text-xs font-bold text-slate-500 block mb-1">청구 산정 기준:</label>
+                <select id="filter-settle-mode" onchange="updateSettlementTable()" class="rounded-xl border border-slate-300 px-3 py-1.5 text-sm bg-white font-medium focus:ring-2 focus:ring-emerald-500">
+                  <option value="served" selected>실제 배식 완료 식수 기준 (권장)</option>
+                  <option value="applied">전체 신청 식수 기준 (사전 청구)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex items-center space-x-2">
+              <button onclick="exportToCSV()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center space-x-1.5 shadow-sm">
+                <i class="fa-solid fa-file-excel"></i>
+                <span>결산 엑셀(CSV) 다운로드</span>
+              </button>
+              <button onclick="printSettlementReport()" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition flex items-center space-x-1.5 shadow-sm">
+                <i class="fa-solid fa-print"></i>
+                <span>월말 결산표 인쇄</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 결산 테이블 -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm text-slate-600">
+              <thead class="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                <tr>
+                  <th scope="col" class="px-4 py-3.5">반명</th>
+                  <th scope="col" class="px-4 py-3.5">원아명</th>
+                  <th scope="col" class="px-4 py-3.5">보호자</th>
+                  <th scope="col" class="px-4 py-3.5">연락처</th>
+                  <th scope="col" class="px-4 py-3.5 text-center">신청 식수</th>
+                  <th scope="col" class="px-4 py-3.5 text-center text-emerald-700">실배식 식수</th>
+                  <th scope="col" class="px-4 py-3.5 text-center">배식 상태</th>
+                  <th scope="col" class="px-4 py-3.5 text-right">식대 단가</th>
+                  <th scope="col" class="px-4 py-3.5 text-right font-bold text-slate-900">결산 청구액</th>
+                  <th scope="col" class="px-4 py-3.5 text-center">문서 발급</th>
+                </tr>
+              </thead>
+              <tbody id="settlement-tbody" class="divide-y divide-slate-100">
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 서브탭 2: 개별 어린이집 범용 환경 설정 -->
+      <div id="admin-subtab-config-view" class="hidden bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+        <div>
+          <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <i class="fa-solid fa-sliders text-emerald-600"></i> 개별 어린이집 맞춤 범용 설정
+          </h3>
+          <p class="text-xs text-slate-500 mt-1">기관에 맞춰 어린이집명, 반 구성, 선착순 정원, 식대 단가, 입금 계좌 및 마감 타이머를 설정하세요. 실시간 시스템에 즉시 반영됩니다.</p>
+        </div>
+
+        <form id="setting-form" onsubmit="saveCustomSettings(event)" class="space-y-6 max-w-3xl">
+          <!-- 마감 타이머 및 접수 기간 제어 블록 -->
+          <div class="bg-amber-50/50 p-5 rounded-2xl border border-amber-200 space-y-4">
+            <div class="flex items-center justify-between border-b border-amber-200/60 pb-2">
+              <h4 class="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                <i class="fa-solid fa-stopwatch text-amber-600"></i> 신청 마감 카운트다운 타이머 & 알림 설정
+              </h4>
+              <span class="text-[11px] text-amber-700 font-medium">학부모 화면에 초단위 실시간 카운트다운 표시</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">타이머 운영 방식</label>
+                <div class="flex items-center gap-3 mt-1">
+                  <label class="inline-flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input type="radio" name="timerMode" id="cfg-timer-mode-weekly" value="weekly" checked onchange="toggleTimerConfigMode('weekly')" class="text-amber-500">
+                    <span class="font-bold text-slate-800">매주 정기 자동 반복</span>
+                  </label>
+                  <label class="inline-flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input type="radio" name="timerMode" id="cfg-timer-mode-custom" value="custom" onchange="toggleTimerConfigMode('custom')" class="text-amber-500">
+                    <span class="font-bold text-slate-800">수동 마감일시 지정</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">접수 활성화 상태</label>
+                <select id="cfg-is-open" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500">
+                  <option value="true">정상 접수 가능 (OPEN)</option>
+                  <option value="false">접수 일시 마감 (CLOSED)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 정기 반복 설정 -->
+            <div id="block-timer-weekly" class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-amber-200/40">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">매주 마감 요일</label>
+                <select id="cfg-weekly-close-day" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500">
+                  <option value="1">매주 월요일</option>
+                  <option value="2">매주 화요일</option>
+                  <option value="3">매주 수요일</option>
+                  <option value="4">매주 목요일</option>
+                  <option value="5" selected>매주 금요일 (권장)</option>
+                  <option value="6">매주 토요일</option>
+                  <option value="0">매주 일요일</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">매주 마감 시간</label>
+                <input type="time" id="cfg-weekly-close-time" value="18:00" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500">
+              </div>
+            </div>
+
+            <!-- 수동 마감일시 설정 -->
+            <div id="block-timer-custom" class="hidden pt-2 border-t border-amber-200/40">
+              <label class="block text-xs font-bold text-slate-700 mb-1">지정 마감 일시</label>
+              <input type="datetime-local" id="cfg-custom-close-datetime" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500">
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-amber-200/40">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">당일 취소 마감기한 안내 문구</label>
+                <input type="text" id="cfg-cancel-deadline" placeholder="당일 14:00까지" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500">
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">공지사항 배너 텍스트</label>
+                <input type="text" id="cfg-urgent-notice" placeholder="긴급 돌봄 석식 공지" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-500">
+              </div>
+            </div>
+          </div>
+
+          <!-- 기본 기관 정보 -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">어린이집 명칭</label>
+              <input type="text" id="cfg-center-name" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">원 대표 연락처</label>
+              <input type="text" id="cfg-center-tel" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">주간 선착순 제한 정원 (명)</label>
+              <input type="number" id="cfg-capacity" min="5" max="100" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+              <span class="text-[11px] text-slate-400">기본값: 20명</span>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">1식당 식대 단가 (원)</label>
+              <input type="number" id="cfg-meal-price" min="1000" step="100" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+              <span class="text-[11px] text-slate-400">기본값: 4,500원</span>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">운영 반 목록 (쉼표 , 로 구분)</label>
+            <input type="text" id="cfg-classes" required placeholder="새싹반 (만 1세), 꽃잎반 (만 2세), 열매반 (만 3세), 바다반 (만 4세), 하늘반 (만 5세)" class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            <p class="text-[11px] text-slate-400 mt-1">예: 새싹반 (만 1세), 꽃잎반 (만 2세), 열매반 (만 3세), 바다반 (만 4세), 하늘반 (만 5세)</p>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">고지서 입금 은행 / 계좌번호</label>
+              <input type="text" id="cfg-bank-account" placeholder="예: 신한은행 XXX-XXX-XXXX-XX (현대모비스마북어린이집)" class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">석식 제공 운영 시간</label>
+              <input type="text" id="cfg-meal-time" class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+            </div>
+          </div>
+
+          <div class="pt-4 border-t border-slate-200">
+            <h4 class="text-xs font-bold text-slate-800 mb-3 flex items-center gap-1.5">
+              <i class="fa-solid fa-shield-halved text-emerald-600"></i> 교직원 및 총괄관리자 접속 보안 비밀번호 설정
+            </h4>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">담임교사용 인증 PIN (숫자 4자리 권장)</label>
+                <input type="password" id="cfg-teacher-pin" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">총괄관리자 마스터 비밀번호</label>
+                <input type="password" id="cfg-admin-pwd" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none">
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3 pt-2">
+            <button type="submit" class="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold shadow-md transition">
+              <i class="fa-solid fa-floppy-disk mr-1"></i> 변경사항 저장 및 즉시 반영
+            </button>
+          </div>
+        </form>
+
+        <!-- 데이터 백업 및 복원 -->
+        <div class="mt-8 pt-6 border-t border-slate-200">
+          <h4 class="text-sm font-bold text-slate-900 mb-1 flex items-center gap-1.5">
+            <i class="fa-solid fa-database text-emerald-600"></i> 데이터 백업 및 복원 관리 (단독 파일 전용)
+          </h4>
+          <p class="text-xs text-slate-500 mb-4">현재까지의 신청 내역 및 기관 설정을 JSON 파일로 백업해 보관하거나 언제든 복원할 수 있습니다.</p>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <button onclick="downloadJsonBackup()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-300">
+              <i class="fa-solid fa-download"></i>
+              <span>전체 데이터 백업 파일(JSON) 다운로드</span>
+            </button>
+            <label class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-300 cursor-pointer">
+              <i class="fa-solid fa-upload"></i>
+              <span>백업 파일에서 데이터 불러오기</span>
+              <input type="file" accept=".json" onchange="uploadJsonBackup(event)" class="hidden">
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 학부모 자녀 식대 조회 모달 -->
+  <div id="parent-lookup-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative border border-slate-200">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+          <i class="fa-solid fa-magnifying-glass text-emerald-600"></i> 내 아이 석식 식대 및 고지서 조회
+        </h3>
+        <button onclick="closeParentLookupModal()" class="text-slate-400 hover:text-slate-600">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">원아 성명</label>
+          <input type="text" id="parent-search-child" placeholder="예: 홍길이" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">보호자 연락처 (전체 또는 뒷 4자리)</label>
+          <input type="tel" id="parent-search-phone" placeholder="예: 4451 또는 010-3321-4451" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500">
+        </div>
+        <button onclick="executeParentLookup()" class="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm transition">
+          조회하기
+        </button>
+
+        <div id="parent-lookup-results" class="max-h-60 overflow-y-auto space-y-2 pt-2">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 영수증 / 고지서 출력 모달 -->
+  <div id="bill-modal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center hidden p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl relative my-8 border border-slate-200">
+      <div class="flex items-center justify-between pb-4 border-b border-slate-200 print:hidden">
+        <span class="text-xs font-bold px-2.5 py-1 rounded bg-amber-100 text-amber-800">어린이집 정식 고지서 / 영수증</span>
+        <div class="flex items-center gap-2">
+          <button onclick="printBillDirectly()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5">
+            <i class="fa-solid fa-print"></i> 인쇄하기
+          </button>
+          <button onclick="closeBillModal()" class="text-slate-400 hover:text-slate-600 p-1">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+      </div>
+
+      <div id="printable-bill-sheet" class="mt-4 p-4 border border-slate-300 rounded-xl bg-white text-slate-900">
+        <div class="text-center pb-4 border-b-2 border-slate-800">
+          <h2 class="text-2xl font-extrabold tracking-tight" id="bill-center-name">현대모비스마북어린이집</h2>
+          <p class="text-base font-bold text-slate-700 mt-1">긴급 석식 식대 납부고지서 및 영수증</p>
+          <span class="text-xs text-slate-500" id="bill-issue-date"></span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 py-4 border-b border-slate-200 text-xs sm:text-sm">
+          <div>
+            <p><span class="text-slate-500">소속 반명:</span> <strong id="bill-class"></strong></p>
+            <p class="mt-1"><span class="text-slate-500">원아 성명:</span> <strong id="bill-child"></strong></p>
+          </div>
+          <div class="text-right">
+            <p><span class="text-slate-500">보호자 성명:</span> <strong id="bill-parent"></strong></p>
+            <p class="mt-1"><span class="text-slate-500">연락처:</span> <span id="bill-phone" class="font-mono"></span></p>
+          </div>
+        </div>
+
+        <div class="py-4">
+          <table class="w-full text-xs sm:text-sm border-collapse">
+            <thead>
+              <tr class="border-b border-slate-300 bg-slate-50 text-slate-700">
+                <th class="py-2 px-2 text-left">항목</th>
+                <th class="py-2 px-2 text-center">신청 주차</th>
+                <th class="py-2 px-2 text-center">신청 요일 (식수)</th>
+                <th class="py-2 px-2 text-center text-emerald-700">배식 완료 실식수</th>
+                <th class="py-2 px-2 text-right">식대 단가</th>
+                <th class="py-2 px-2 text-right">청구 금액</th>
+              </tr>
+            </thead>
+            <tbody id="bill-table-body" class="divide-y divide-slate-200">
+            </tbody>
+            <tfoot>
+              <tr class="border-t-2 border-slate-800 font-bold text-slate-900 bg-amber-50/50">
+                <td colspan="5" class="py-3 px-2 text-right font-bold">총 청구 합계 금액</td>
+                <td class="py-3 px-2 text-right font-mono text-base text-amber-700 font-extrabold" id="bill-total-price">0원</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div class="p-3 bg-slate-50 rounded-lg text-xs space-y-1 text-slate-600 border border-slate-200 mt-2">
+          <p class="font-bold text-slate-800"><i class="fa-solid fa-building-columns mr-1"></i>납부 계좌 안내</p>
+          <p><span class="font-semibold text-slate-700" id="bill-account-info"></span></p>
+          <p class="text-[11px] text-slate-500">※ 입금 시 반드시 [반이름 + 원아명]으로 입금해 주시기 바랍니다.</p>
+        </div>
+
+        <div class="mt-6 text-center text-xs text-slate-400">
+          위와 같이 어린이집 긴급 돌봄 석식 식대 정산 내역을 청구 및 영수합니다.<br>
+          <strong class="text-slate-800 text-sm mt-1 inline-block" id="bill-footer-center">원장</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 보안 로그인 모달 -->
+  <div id="auth-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative border border-slate-200">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-5">
+        <div class="flex items-center space-x-2">
+          <div id="auth-modal-icon-wrap" class="w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center text-sm font-bold">
+            <i id="auth-modal-icon" class="fa-solid fa-lock"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-slate-900" id="auth-modal-title">관계자 인증</h3>
+            <p class="text-[11px] text-slate-500" id="auth-modal-subtitle">어린이집 교직원 전용 접근 권한 확인</p>
+          </div>
+        </div>
+        <button onclick="closeAuthModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <form id="auth-form" onsubmit="handleAuthSubmit(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">인증 대상 권한</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" id="auth-role-teacher-btn" onclick="selectAuthRole('teacher')" class="py-2.5 px-3 rounded-xl border-2 border-sky-500 bg-sky-50 text-sky-800 text-xs font-bold flex items-center justify-center gap-1.5 transition">
+              <i class="fa-solid fa-chalkboard-user"></i> 담임교사
+            </button>
+            <button type="button" id="auth-role-admin-btn" onclick="selectAuthRole('admin')" class="py-2.5 px-3 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 transition">
+              <i class="fa-solid fa-user-shield"></i> 총괄 관리자
+            </button>
+          </div>
+        </div>
+
+        <div id="auth-teacher-class-block">
+          <label class="block text-xs font-bold text-slate-700 mb-1">담당 반 선택 (선택)</label>
+          <select id="auth-teacher-class" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none">
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1" id="auth-pwd-label">인증 비밀번호 / PIN</label>
+          <input type="password" id="auth-input-pwd" required class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-sky-500 focus:outline-none font-mono">
+        </div>
+
+        <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 text-[11px] text-slate-500 flex items-start gap-2">
+          <i class="fa-solid fa-circle-info text-amber-500 mt-0.5"></i>
+          <div>
+            <span class="font-semibold text-slate-700">기본 접속 정보:</span><br>
+            • 담임교사 PIN: <code class="font-bold text-sky-700">1234</code><br>
+            • 총괄관리자 PW: <code class="font-bold text-emerald-700">admin1234</code>
+          </div>
+        </div>
+
+        <div class="pt-1">
+          <button type="submit" id="btn-auth-confirm" class="w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm shadow-md transition">
+            <span id="btn-auth-text">담임교사 로그인</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <script>
+    // 시스템 기본 설정값
+    const DEFAULT_CONFIG = {
+      centerName: "현대모비스마북어린이집",
+      centerTel: "02-123-4567",
+      maxCapacity: 20,
+      mealPrice: 4500,
+      mealTime: "18:00 ~ 19:30",
+      cancelDeadline: "당일 14:00까지",
+      urgentNotice: "긴급 돌봄 석식 공지",
+      isApplyOpen: true,
+      bankAccount: "농협 302-1234-5678-91 (현대모비스마북어린이집)",
+      classes: ["OO반 (1세)", "OO반 (2세)", "OO반 (3세)", "OO반 (4세)", "OO반 (5세)"],
+      teacherPin: "1234",
+      adminPassword: "admin1234",
+      timerMode: "weekly",
+      weeklyCloseDay: 5,
+      weeklyCloseTime: "18:00",
+      customCloseDatetime: ""
+    };
+
+    let DaycareConfig = { ...DEFAULT_CONFIG };
+    try {
+      const storedCfg = localStorage.getItem('DAYCARE_STANDALONE_CONFIG');
+      if (storedCfg) DaycareConfig = { ...DEFAULT_CONFIG, ...JSON.parse(storedCfg) };
+    } catch (err) { console.warn("설정 로드 실패:", err); }
+
+    let currentAuthSession = null;
+    let pendingTargetRole = null;
+    let selectedAuthModalRole = 'teacher';
+    let countdownIntervalId = null;
+    let isTimeExpired = false;
+
+    // 주차 계산 엔진: 접속일(캘린더) 기준 5개 주차 자동 연산
+    function calculateDynamicWeeks(refDate = new Date()) {
+      const weeks = [];
+      function getWeekMonday(date) {
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        d.setDate(diff);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      }
+
+      const currentMonday = getWeekMonday(refDate);
+
+      for (let offset = -1; offset <= 3; offset++) {
+        const mon = new Date(currentMonday);
+        mon.setDate(currentMonday.getDate() + (offset * 7));
+        const fri = new Date(mon);
+        fri.setDate(mon.getDate() + 4);
+
+        const year = mon.getFullYear();
+        const monthNum = mon.getMonth() + 1;
+        const monthStr = `${year}-${String(monthNum).padStart(2, '0')}`;
+
+        const firstDay = new Date(year, mon.getMonth(), 1);
+        const adj = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
+        const weekNum = Math.ceil((mon.getDate() + adj) / 7);
+
+        const id = `${monthStr}-W${weekNum}`;
+        const monFormatted = `${String(monthNum).padStart(2, '0')}.${String(mon.getDate()).padStart(2, '0')}`;
+        const friFormatted = `${String(fri.getMonth() + 1).padStart(2, '0')}.${String(fri.getDate()).padStart(2, '0')}`;
+
+        let statusTag = '';
+        if (offset === 0) statusTag = ' [이번 주]';
+        else if (offset === 1) statusTag = ' [다음 주]';
+        else if (offset < 0) statusTag = ' [지난 주]';
+
+        const label = `${year}년 ${monthNum}월 ${weekNum}주차 (${monFormatted}~${friFormatted})${statusTag}`;
+
+        weeks.push({
+          id: id,
+          label: label,
+          month: monthStr,
+          startDate: `${year}-${String(monthNum).padStart(2, '0')}-${String(mon.getDate()).padStart(2, '0')}`,
+          isCurrent: offset === 0
+        });
+      }
+      return weeks;
+    }
+
+    let availableWeeks = calculateDynamicWeeks();
+    let currentSelectedWeek = availableWeeks.find(w => w.isCurrent) || availableWeeks[1];
+
+    // 원아 배식 완료 데이터 정규화 헬퍼
+    function normalizeServedData(item) {
+      if (!item.month) {
+        if (item.weekId && item.weekId.includes('-W')) {
+          item.month = item.weekId.split('-W')[0];
+        } else if (item.createdAt) {
+          item.month = item.createdAt.substring(0, 7);
+        } else {
+          item.month = currentSelectedWeek ? currentSelectedWeek.month : new Date().toISOString().substring(0, 7);
+        }
+      }
+      if (!Array.isArray(item.days)) {
+        item.days = item.days ? [item.days] : [];
+      }
+      item.daysCount = item.days.length;
+
+      if (!Array.isArray(item.servedDays)) {
+        item.servedDays = item.status === '배식완료' ? [...item.days] : [];
+      }
+      item.servedCount = item.servedDays.length;
+      if (item.servedCount === 0) {
+        item.status = '대기';
+      } else if (item.servedCount === item.days.length) {
+        item.status = '배식완료';
+      } else {
+        item.status = '일부완료';
+      }
+      return item;
+    }
+
+    // 초기 샘플 데이터 및 로컬 스토리지 복원
+    let dinnerApplications = [
+      { id: "APP-01", weekId: currentSelectedWeek.id, month: currentSelectedWeek.month, className: "OO반 (3세)", childName: "홍길이", parentName: "홍길동", phone: "010-1234-5678", days: ["월요일", "수요일", "금요일"], daysCount: 3, servedDays: ["월요일", "수요일", "금요일"], servedCount: 3, allergy: "복숭아 알레르기", status: "배식완료", pickedUp: true, createdAt: "2026-09-07 09:12:00" },
+      { id: "APP-02", weekId: currentSelectedWeek.id, month: currentSelectedWeek.month, className: "새싹반 (만 1세)", childName: "홍길이", parentName: "홍길동", phone: "010-1234-5678", days: ["월요일", "화요일"], daysCount: 2, servedDays: ["월요일"], servedCount: 1, allergy: "계란 완숙만 섭취", status: "일부완료", pickedUp: false, createdAt: "2026-09-07 09:15:30" },
+      { id: "APP-03", weekId: currentSelectedWeek.id, month: currentSelectedWeek.month, className: "바다반 (만 4세)", childName:  "홍길오", parentName: "홍길동", phone: "010-1234-5678", days: ["화요일", "목요일", "금요일"], daysCount: 3, servedDays: [], servedCount: 0, allergy: "갑각류", status: "대기", pickedUp: false, createdAt: "2026-09-07 09:20:10" }
+    ].map(normalizeServedData);
+
+    try {
+      const storedApps = localStorage.getItem('DAYCARE_STANDALONE_APPLICATIONS');
+      if (storedApps) {
+        const parsed = JSON.parse(storedApps);
+        if (Array.isArray(parsed)) {
+          dinnerApplications = parsed.map(normalizeServedData);
+        }
+      }
+    } catch (err) { console.warn("신청 데이터 로드 실패:", err); }
+
+    function persistState() {
+      try {
+        localStorage.setItem('DAYCARE_STANDALONE_CONFIG', JSON.stringify(DaycareConfig));
+        localStorage.setItem('DAYCARE_STANDALONE_APPLICATIONS', JSON.stringify(dinnerApplications));
+      } catch (e) { /* fallback */ }
+    }
+
+    function updateFormFeeCalculation() {
+      const checkedDays = document.querySelectorAll('input[name="days"]:checked').length;
+      const unitPrice = DaycareConfig.mealPrice || 4500;
+      const totalFee = checkedDays * unitPrice;
+
+      const detailsEl = document.getElementById('form-fee-calc-details');
+      const totalEl = document.getElementById('form-fee-total');
+      const unitPriceEl = document.getElementById('form-unit-price-display');
+
+      if (unitPriceEl) unitPriceEl.textContent = unitPrice.toLocaleString();
+      if (detailsEl) detailsEl.innerHTML = `${checkedDays}일 선택 (1식 <span id="form-unit-price-display">${unitPrice.toLocaleString()}</span>원 기준)`;
+      if (totalEl) totalEl.textContent = `${totalFee.toLocaleString()}원`;
+    }
+
+    function openParentLookupModal() {
+      const modal = document.getElementById('parent-lookup-modal');
+      if (modal) modal.classList.remove('hidden');
+    }
+    function closeParentLookupModal() {
+      const modal = document.getElementById('parent-lookup-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function executeParentLookup() {
+      const childKeyword = (document.getElementById('parent-search-child')?.value || '').trim().toLowerCase();
+      const phoneKeyword = (document.getElementById('parent-search-phone')?.value || '').trim();
+      const container = document.getElementById('parent-lookup-results');
+      if (!container) return;
+
+      if (!childKeyword && !phoneKeyword) {
+        showToast('원아 성명 또는 연락처를 최소 하나 이상 입력해 주세요.', 'warning');
+        return;
+      }
+
+      const matched = dinnerApplications.filter(item => {
+        const matchChild = childKeyword ? item.childName.toLowerCase().includes(childKeyword) : true;
+        const matchPhone = phoneKeyword ? item.phone.replace(/[^0-9]/g, '').includes(phoneKeyword.replace(/[^0-9]/g, '')) : true;
+        return matchChild && matchPhone;
+      });
+
+      if (matched.length === 0) {
+        container.innerHTML = `<p class="text-center text-xs text-rose-500 py-6">일치하는 신청 내역이 없습니다. 정보를 다시 확인해 주세요.</p>`;
+        return;
+      }
+
+      const unitPrice = DaycareConfig.mealPrice || 4500;
+      container.innerHTML = matched.map(item => {
+        normalizeServedData(item);
+        const servedCost = item.servedCount * unitPrice;
+        const encoded = encodeURIComponent(JSON.stringify({
+          className: item.className,
+          childName: item.childName,
+          parentName: item.parentName,
+          phone: item.phone,
+          totalAppliedMeals: item.daysCount,
+          totalServedMeals: item.servedCount,
+          records: [item],
+          settleMode: 'served'
+        }));
+
+        return `
+          <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-slate-800 text-sm">${item.childName} (${item.className})</span>
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold ${item.status === '배식완료' ? 'bg-emerald-100 text-emerald-800' : (item.status === '일부완료' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600')}">${item.status}</span>
+            </div>
+            <div class="text-slate-600 text-[11px]">신청 주차: ${item.weekId} | 신청 요일: ${item.days.join(', ')} (${item.daysCount}식)</div>
+            <div class="flex items-center justify-between pt-1 border-t border-slate-200/60 font-medium">
+              <span>실배식 완료: <strong class="text-emerald-600">${item.servedCount}식</strong> / ${item.daysCount}식</span>
+              <span class="font-bold text-slate-900 font-mono text-sm">${servedCost.toLocaleString()}원</span>
+            </div>
+            <div class="pt-1">
+              <button type="button" onclick="closeParentLookupModal(); openBillModal('${encoded}')" class="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs transition flex items-center justify-center gap-1">
+                <i class="fa-solid fa-receipt"></i> 고지서 / 영수증 보기
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function syncDaycareUI() {
+      const headerName = document.getElementById('header-center-name');
+      if (headerName) headerName.textContent = DaycareConfig.centerName;
+
+      document.querySelectorAll('.max-cap-display').forEach(el => {
+        el.textContent = DaycareConfig.maxCapacity;
+      });
+
+      const bannerPrice = document.getElementById('banner-meal-price');
+      if (bannerPrice) bannerPrice.textContent = DaycareConfig.mealPrice.toLocaleString();
+
+      const bannerTime = document.getElementById('banner-meal-time');
+      if (bannerTime) bannerTime.textContent = DaycareConfig.mealTime;
+
+      const bannerDeadline = document.getElementById('banner-cancel-deadline');
+      if (bannerDeadline) bannerDeadline.textContent = DaycareConfig.cancelDeadline;
+
+      const agreeDeadline = document.getElementById('form-agree-deadline');
+      if (agreeDeadline) agreeDeadline.textContent = DaycareConfig.cancelDeadline;
+
+      const urgentNotice = document.getElementById('banner-urgent-notice');
+      if (urgentNotice) urgentNotice.textContent = DaycareConfig.urgentNotice;
+
+      const statusTag = document.getElementById('apply-status-tag');
+      if (statusTag) {
+        if (DaycareConfig.isApplyOpen && !isTimeExpired) {
+          statusTag.className = 'inline-flex items-center gap-1 font-bold text-emerald-300';
+          statusTag.innerHTML = '<i class="fa-solid fa-circle-check text-[10px]"></i> 정상 접수 중';
+        } else {
+          statusTag.className = 'inline-flex items-center gap-1 font-bold text-rose-300';
+          statusTag.innerHTML = '<i class="fa-solid fa-ban text-[10px]"></i> 접수 마감됨';
+        }
+      }
+
+      const unitPriceDisplay = document.getElementById('stat-unit-price-display');
+      if (unitPriceDisplay) unitPriceDisplay.textContent = DaycareConfig.mealPrice.toLocaleString();
+      updateFormFeeCalculation();
+    }
+
+    function populateClassSelectors() {
+      const selectors = ['form-class', 'teacher-filter-class', 'admin-filter-class', 'filter-class', 'auth-teacher-class'];
+      selectors.forEach(id => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        const currentVal = select.value;
+        let defaultText = '반을 선택하세요';
+        if (id.includes('filter')) defaultText = '전체 반';
+        if (id === 'auth-teacher-class') defaultText = '담당 반 선택 (선택 안 함)';
+
+        select.innerHTML = `<option value="${id.includes('filter') ? 'all' : ''}">${defaultText}</option>`;
+        DaycareConfig.classes.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c;
+          opt.textContent = c;
+          select.appendChild(opt);
+        });
+        if (currentVal) select.value = currentVal;
+      });
+    }
+
+    function populateWeekOptions() {
+      const select = document.getElementById('form-week');
+      const teacherWeekSelect = document.getElementById('teacher-filter-week');
+      const adminWeekSelect = document.getElementById('admin-filter-week');
+      const monthFilter = document.getElementById('filter-month');
+
+      if (!select || !teacherWeekSelect) return;
+
+      select.innerHTML = '';
+      teacherWeekSelect.innerHTML = '<option value="all">전체 주차</option>';
+      if (adminWeekSelect) adminWeekSelect.innerHTML = '<option value="all">전체 주차 통합 보기</option>';
+
+      const allMonthsSet = new Set([
+        ...availableWeeks.map(w => w.month),
+        ...dinnerApplications.map(a => a.month || (a.weekId ? a.weekId.slice(0, 7) : '')).filter(Boolean)
+      ]);
+      const sortedMonths = Array.from(allMonthsSet).sort().reverse();
+      const currentMonthVal = currentSelectedWeek ? currentSelectedWeek.month : sortedMonths[0];
+
+      if (monthFilter) {
+        const prevSelected = monthFilter.value;
+        let monthOptions = `<option value="all">전체 월 통합 결산</option>`;
+        monthOptions += sortedMonths.map(m => {
+          const [y, mo] = m.split('-');
+          const isSelected = (!prevSelected && m === currentMonthVal) || (prevSelected === m);
+          return `<option value="${m}" ${isSelected ? 'selected' : ''}>${y}년 ${parseInt(mo, 10)}월 ${m === currentMonthVal ? '(당월)' : ''}</option>`;
+        }).join('');
+        monthFilter.innerHTML = monthOptions;
+      }
+
+      availableWeeks.forEach(w => {
+        const opt1 = document.createElement('option');
+        opt1.value = w.id;
+        opt1.textContent = w.label;
+        if (w.id === currentSelectedWeek.id) opt1.selected = true;
+        select.appendChild(opt1);
+
+        const opt2 = document.createElement('option');
+        opt2.value = w.id;
+        opt2.textContent = w.label;
+        if (w.id === currentSelectedWeek.id) opt2.selected = true;
+        teacherWeekSelect.appendChild(opt2);
+
+        if (adminWeekSelect) {
+          const opt3 = document.createElement('option');
+          opt3.value = w.id;
+          opt3.textContent = w.label;
+          if (w.id === currentSelectedWeek.id) opt3.selected = true;
+          adminWeekSelect.appendChild(opt3);
+        }
+      });
+    }
+
+    function setupDateSubtext() {
+      if (!currentSelectedWeek || !currentSelectedWeek.startDate) return;
+      const base = new Date(currentSelectedWeek.startDate);
+      const labels = document.querySelectorAll('.day-date');
+      labels.forEach(el => {
+        const offset = parseInt(el.getAttribute('data-offset') || '0', 10);
+        const dayDate = new Date(base);
+        dayDate.setDate(base.getDate() + offset);
+        const mm = String(dayDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(dayDate.getDate()).padStart(2, '0');
+        el.textContent = `${mm}/${dd}`;
+      });
+    }
+
+    function onWeekChange() {
+      const select = document.getElementById('form-week');
+      currentSelectedWeek = availableWeeks.find(w => w.id === select.value) || availableWeeks[0];
+      setupDateSubtext();
+      updateCapacityUI();
+      renderApplicantList();
+    }
+
+    function getWeekApplicantCount(weekId) {
+      return dinnerApplications.filter(a => a.weekId === weekId).length;
+    }
+
+    function updateCapacityUI() {
+      const count = getWeekApplicantCount(currentSelectedWeek.id);
+      const maxCap = DaycareConfig.maxCapacity;
+      const remaining = Math.max(0, maxCap - count);
+      const percentage = Math.min(100, Math.round((count / maxCap) * 100));
+
+      const labelEl = document.getElementById('current-week-label');
+      if (labelEl) labelEl.textContent = `${currentSelectedWeek.label.split(' ')[1] || ''} 접수 현황`;
+
+      const appliedEl = document.getElementById('applied-count');
+      if (appliedEl) appliedEl.textContent = count;
+
+      const remEl = document.getElementById('remaining-count');
+      if (remEl) remEl.textContent = remaining;
+
+      const bar = document.getElementById('capacity-bar');
+      if (bar) bar.style.width = `${percentage}%`;
+
+      const badge = document.getElementById('capacity-badge');
+      const submitBtn = document.getElementById('btn-submit-apply');
+
+      const isClosed = !DaycareConfig.isApplyOpen || isTimeExpired;
+
+      if (isClosed) {
+        if (bar) bar.className = 'bg-rose-500 h-3 rounded-full transition-all duration-500';
+        if (badge) {
+          badge.className = 'px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-100 text-rose-800';
+          badge.textContent = '신청 마감';
+        }
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.className = 'w-full py-3.5 px-6 rounded-xl bg-slate-300 text-slate-500 font-bold text-base cursor-not-allowed transition flex items-center justify-center space-x-2';
+          submitBtn.innerHTML = `<i class="fa-solid fa-ban"></i><span>신청 접수가 마감되었습니다</span>`;
+        }
+      } else if (count >= maxCap) {
+        if (bar) bar.className = 'bg-rose-500 h-3 rounded-full transition-all duration-500';
+        if (badge) {
+          badge.className = 'px-2.5 py-1 text-xs font-semibold rounded-full bg-rose-100 text-rose-800';
+          badge.textContent = '선착순 마감';
+        }
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.className = 'w-full py-3.5 px-6 rounded-xl bg-slate-300 text-slate-500 font-bold text-base cursor-not-allowed transition flex items-center justify-center space-x-2';
+          submitBtn.innerHTML = `<i class="fa-solid fa-ban"></i><span>이번 주 선착순 ${maxCap}명 마감되었습니다</span>`;
+        }
+      } else {
+        if (bar) bar.className = 'bg-amber-500 h-3 rounded-full transition-all duration-500';
+        if (badge) {
+          badge.className = 'px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800';
+          badge.textContent = `신청 가능 (${remaining}석 남음)`;
+        }
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.className = 'w-full py-3.5 px-6 rounded-xl bg-amber-500 hover:bg-amber-600 active:scale-[0.99] text-white font-bold text-base shadow-lg shadow-amber-500/20 transition flex items-center justify-center space-x-2';
+          submitBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i><span>선착순 ${maxCap}명 긴급 석식 신청 접수하기</span>`;
+        }
+      }
+    }
+
+    function maskName(name) {
+      if (!name) return '';
+      if (name.length <= 2) return name[0] + '*';
+      return name[0] + '*'.repeat(name.length - 2) + name[name.length - 1];
+    }
+
+    function renderApplicantList() {
+      const container = document.getElementById('applicant-list-container');
+      const badge = document.getElementById('list-count-badge');
+      if (!container) return;
+
+      const list = dinnerApplications.filter(a => a.weekId === currentSelectedWeek.id);
+      if (badge) badge.textContent = `${list.length} / ${DaycareConfig.maxCapacity}명`;
+
+      if (list.length === 0) {
+        container.innerHTML = `
+          <div class="py-12 text-center text-slate-400">
+            <i class="fa-solid fa-utensils text-3xl mb-2 opacity-40"></i>
+            <p class="text-xs">현재 접수된 석식 신청 내역이 없습니다.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = list.map((item, index) => `
+        <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-amber-200 transition">
+          <div class="flex items-center space-x-3">
+            <span class="w-6 h-6 rounded-full ${index < 3 ? 'bg-amber-100 text-amber-800 font-bold' : 'bg-slate-200 text-slate-600'} text-xs flex items-center justify-center font-mono">
+              ${index + 1}
+            </span>
+            <div>
+              <div class="flex items-center space-x-2">
+                <span class="font-bold text-slate-800 text-xs sm:text-sm">${maskName(item.childName)} 원아</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-white text-slate-500 border border-slate-200">${item.className}</span>
+              </div>
+              <div class="text-[11px] text-slate-500 mt-0.5">
+                <i class="fa-regular fa-calendar-check text-amber-500 mr-1"></i>${item.days.join(', ')} (${item.daysCount}식)
+              </div>
+            </div>
+          </div>
+          <span class="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-1 rounded font-semibold border border-emerald-200">
+            접수완료
+          </span>
+        </div>
+      `).join('');
+    }
+
+    function handleApplySubmit(e) {
+      e.preventDefault();
+      if (!DaycareConfig.isApplyOpen || isTimeExpired) {
+        showToast('신청 기간이 마감되었거나 일시 중단된 상태입니다.', 'error');
+        return;
+      }
+
+      const weekId = document.getElementById('form-week').value;
+      const className = document.getElementById('form-class').value;
+      const childName = document.getElementById('form-child-name').value.trim();
+      const parentName = document.getElementById('form-parent-name').value.trim();
+      const phone = document.getElementById('form-phone').value.trim();
+      const allergy = document.getElementById('form-allergy').value.trim();
+
+      const checkedDays = Array.from(document.querySelectorAll('input[name="days"]:checked')).map(cb => cb.value);
+      if (checkedDays.length === 0) {
+        showToast('석식을 희망하시는 요일을 최소 1개 이상 선택해 주세요.', 'warning');
+        return;
+      }
+
+      const currentCount = getWeekApplicantCount(weekId);
+      if (currentCount >= DaycareConfig.maxCapacity) {
+        showToast(`정원(${DaycareConfig.maxCapacity}명)이 초과되어 신청이 마감되었습니다.`, 'error');
+        updateCapacityUI();
+        return;
+      }
+
+      const isDuplicate = dinnerApplications.some(a => a.weekId === weekId && a.childName === childName && a.className === className);
+      if (isDuplicate) {
+        showToast(`[${childName}] 원아는 이미 해당 주차에 접수되어 있습니다.`, 'warning');
+        return;
+      }
+
+      const targetWeekObj = availableWeeks.find(w => w.id === weekId) || currentSelectedWeek;
+      const newRecord = {
+        id: "APP-" + Date.now().toString().slice(-6),
+        weekId: weekId,
+        month: targetWeekObj.month,
+        className: className,
+        childName: childName,
+        parentName: parentName,
+        phone: phone,
+        days: checkedDays,
+        daysCount: checkedDays.length,
+        servedDays: [],
+        servedCount: 0,
+        allergy: allergy || "없음",
+        status: "대기",
+        pickedUp: false,
+        createdAt: new Date().toISOString().replace('T', ' ').substring(0, 19)
+      };
+
+      dinnerApplications.push(newRecord);
+      persistState();
+
+      document.getElementById('dinner-apply-form').reset();
+      document.getElementById('form-week').value = weekId;
+
+      updateFormFeeCalculation();
+      updateCapacityUI();
+      renderApplicantList();
+      renderTeacherRoster();
+      renderAdminRoster();
+      populateWeekOptions();
+      updateSettlementTable();
+      showToast(`[${childName}] 원아의 긴급 석식이 정상 접수되었습니다!`, 'success');
+    }
+
+    function renderTeacherRoster() {
+      const selectedClass = document.getElementById('teacher-filter-class')?.value || 'all';
+      const selectedWeek = document.getElementById('teacher-filter-week')?.value || 'all';
+      const selectedDay = document.getElementById('teacher-filter-day')?.value || 'all';
+
+      let list = dinnerApplications.map(normalizeServedData);
+      if (selectedClass !== 'all') {
+        list = list.filter(item => item.className === selectedClass);
+      }
+      if (selectedWeek !== 'all') {
+        list = list.filter(item => item.weekId === selectedWeek);
+      }
+      if (selectedDay !== 'all') {
+        list = list.filter(item => item.days.includes(selectedDay));
+      }
+
+      const countEl = document.getElementById('teacher-roster-count');
+      if (countEl) countEl.textContent = list.length;
+      const tbody = document.getElementById('teacher-roster-tbody');
+      if (!tbody) return;
+
+      if (list.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="px-6 py-12 text-center text-slate-400 text-xs">
+              조건에 해당하는 신청 원아가 없습니다.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = list.map(item => {
+        const dayChips = item.days.map(d => {
+          const isServed = item.servedDays.includes(d);
+          return `
+            <button type="button" onclick="toggleDayMealStatus('${item.id}', '${d}')" class="px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1 ${isServed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+              <i class="fa-solid ${isServed ? 'fa-check' : 'fa-minus'} text-[9px]"></i> ${d.replace('요일', '')}
+            </button>
+          `;
+        }).join(' ');
+
+        return `
+          <tr class="hover:bg-sky-50/40 transition">
+            <td class="px-5 py-3.5 font-semibold text-slate-900">${item.className}</td>
+            <td class="px-5 py-3.5 font-bold text-slate-900">${item.childName}</td>
+            <td class="px-5 py-3.5 text-xs text-slate-600">
+              <div>${item.parentName}</div>
+              <div class="font-mono text-slate-400">${item.phone}</div>
+            </td>
+            <td class="px-5 py-3.5 text-xs">
+              <span class="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">${item.days.join(', ')}</span>
+            </td>
+            <td class="px-5 py-3.5 text-xs font-semibold ${item.allergy !== '없음' ? 'text-rose-600 font-bold' : 'text-slate-400'}">
+              ${item.allergy}
+            </td>
+            <td class="px-5 py-3.5 text-center">
+              <div class="flex items-center justify-center gap-1 flex-wrap mb-1.5">
+                ${dayChips}
+              </div>
+              <button onclick="toggleMealStatus('${item.id}')" class="text-[10px] underline text-slate-400 hover:text-slate-700">
+                ${item.status === '배식완료' ? '일괄 취소' : '전체 완료'} (${item.servedCount}/${item.daysCount})
+              </button>
+            </td>
+            <td class="px-5 py-3.5 text-center">
+              <input type="checkbox" onchange="togglePickup('${item.id}')" ${item.pickedUp ? 'checked' : ''} class="w-4 h-4 text-sky-600 rounded">
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function toggleDayMealStatus(id, day) {
+      const target = dinnerApplications.find(a => a.id === id);
+      if (!target) return;
+      normalizeServedData(target);
+
+      if (target.servedDays.includes(day)) {
+        target.servedDays = target.servedDays.filter(d => d !== day);
+      } else {
+        target.servedDays.push(day);
+      }
+      normalizeServedData(target);
+      persistState();
+      renderTeacherRoster();
+      renderAdminRoster();
+      updateSettlementTable();
+    }
+
+    function toggleMealStatus(id) {
+      const target = dinnerApplications.find(a => a.id === id);
+      if (!target) return;
+      normalizeServedData(target);
+
+      if (target.servedDays.length === target.days.length) {
+        target.servedDays = [];
+      } else {
+        target.servedDays = [...target.days];
+      }
+      normalizeServedData(target);
+      persistState();
+      renderTeacherRoster();
+      renderAdminRoster();
+      updateSettlementTable();
+    }
+
+    function togglePickup(id) {
+      const target = dinnerApplications.find(a => a.id === id);
+      if (target) {
+        target.pickedUp = !target.pickedUp;
+        persistState();
+        renderTeacherRoster();
+        renderAdminRoster();
+      }
+    }
+
+    function switchAdminSubtab(tab) {
+      const rosterView = document.getElementById('admin-subtab-roster-view');
+      const settleView = document.getElementById('admin-subtab-settle-view');
+      const configView = document.getElementById('admin-subtab-config-view');
+      const rosterBtn = document.getElementById('btn-subtab-roster');
+      const settleBtn = document.getElementById('btn-subtab-settle');
+      const configBtn = document.getElementById('btn-subtab-config');
+
+      if (!rosterView || !settleView || !configView) return;
+
+      rosterView.classList.add('hidden');
+      settleView.classList.add('hidden');
+      configView.classList.add('hidden');
+
+      const activeClass = 'px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-emerald-600 text-white transition shadow-sm whitespace-nowrap';
+      const inactiveClass = 'px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 transition whitespace-nowrap';
+
+      if (rosterBtn) rosterBtn.className = inactiveClass;
+      if (settleBtn) settleBtn.className = inactiveClass;
+      if (configBtn) configBtn.className = inactiveClass;
+
+      if (tab === 'roster') {
+        rosterView.classList.remove('hidden');
+        if (rosterBtn) rosterBtn.className = activeClass;
+        renderAdminRoster();
+      } else if (tab === 'settle') {
+        settleView.classList.remove('hidden');
+        if (settleBtn) settleBtn.className = activeClass;
+        updateSettlementTable();
+      } else if (tab === 'config') {
+        configView.classList.remove('hidden');
+        if (configBtn) configBtn.className = activeClass;
+        initSettingForm();
+      }
+    }
+
+    function renderAdminRoster() {
+      const weekVal = document.getElementById('admin-filter-week')?.value || 'all';
+      const classVal = document.getElementById('admin-filter-class')?.value || 'all';
+      const dayVal = document.getElementById('admin-filter-day')?.value || 'all';
+      const keyword = (document.getElementById('admin-search-keyword')?.value || '').trim().toLowerCase();
+
+      let list = dinnerApplications.map(normalizeServedData);
+      if (weekVal !== 'all') list = list.filter(a => a.weekId === weekVal);
+      if (classVal !== 'all') list = list.filter(a => a.className === classVal);
+      if (dayVal !== 'all') list = list.filter(a => a.days.includes(dayVal));
+      if (keyword) {
+        list = list.filter(a =>
+          a.childName.toLowerCase().includes(keyword) ||
+          a.parentName.toLowerCase().includes(keyword) ||
+          a.phone.includes(keyword)
+        );
+      }
+
+      const targetWeekForKpi = weekVal !== 'all' ? weekVal : currentSelectedWeek.id;
+      const weekApps = dinnerApplications.filter(a => a.weekId === targetWeekForKpi);
+      const appliedCount = weekApps.length;
+      const remainingCount = Math.max(0, DaycareConfig.maxCapacity - appliedCount);
+      const totalPlannedMeals = weekApps.reduce((sum, a) => sum + a.daysCount, 0);
+      const allergyCount = weekApps.filter(a => a.allergy && a.allergy !== '없음').length;
+      const totalServedMeals = weekApps.reduce((sum, a) => sum + (a.servedCount || 0), 0);
+
+      const elApp = document.getElementById('admin-stat-applied');
+      const elRem = document.getElementById('admin-stat-remaining');
+      const elMeals = document.getElementById('admin-stat-meals');
+      const elAllergy = document.getElementById('admin-stat-allergy');
+      const elServed = document.getElementById('admin-stat-served');
+      const elServedTotal = document.getElementById('admin-stat-served-total');
+
+      if (elApp) elApp.textContent = appliedCount;
+      if (elRem) elRem.textContent = remainingCount;
+      if (elMeals) elMeals.textContent = totalPlannedMeals;
+      if (elAllergy) elAllergy.textContent = allergyCount;
+      if (elServed) elServed.textContent = totalServedMeals;
+      if (elServedTotal) elServedTotal.textContent = totalPlannedMeals;
+
+      const tbody = document.getElementById('admin-roster-tbody');
+      if (!tbody) return;
+
+      if (list.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="9" class="px-6 py-12 text-center text-slate-400 text-xs">
+              조건에 일치하는 석식 신청 데이터가 없습니다.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = list.map((item, index) => {
+        const dayChips = item.days.map(d => {
+          const isServed = item.servedDays.includes(d);
+          return `
+            <button type="button" onclick="toggleDayMealStatus('${item.id}', '${d}')" class="px-1.5 py-0.5 rounded text-[10px] font-bold transition flex items-center gap-1 ${isServed ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+              <i class="fa-solid ${isServed ? 'fa-check' : 'fa-minus'} text-[8px]"></i> ${d.replace('요일', '')}
+            </button>
+          `;
+        }).join(' ');
+
+        return `
+          <tr class="hover:bg-slate-50 transition">
+            <td class="px-4 py-3.5 text-center font-mono text-xs text-slate-400">${index + 1}</td>
+            <td class="px-4 py-3.5 font-medium text-slate-900">${item.className}</td>
+            <td class="px-4 py-3.5 font-bold text-slate-900">${item.childName}</td>
+            <td class="px-4 py-3.5 text-xs text-slate-600">
+              <div>${item.parentName}</div>
+              <div class="font-mono text-slate-400 text-[11px]">${item.phone}</div>
+            </td>
+            <td class="px-4 py-3.5 text-xs font-mono">
+              <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700">${item.days.join(', ')} (${item.daysCount}식)</span>
+            </td>
+            <td class="px-4 py-3.5 text-xs ${item.allergy !== '없음' ? 'text-rose-600 font-bold' : 'text-slate-400'}">
+              ${item.allergy}
+            </td>
+            <td class="px-4 py-3.5 text-center">
+              <div class="flex items-center justify-center gap-1 flex-wrap mb-1">
+                ${dayChips}
+              </div>
+              <button onclick="toggleMealStatus('${item.id}')" class="text-[10px] underline text-slate-400 hover:text-slate-700">
+                ${item.status === '배식완료' ? '전체 취소' : '일괄 완료'} (${item.servedCount}/${item.daysCount})
+              </button>
+            </td>
+            <td class="px-4 py-3.5 text-center">
+              <input type="checkbox" onchange="togglePickup('${item.id}')" ${item.pickedUp ? 'checked' : ''} class="w-4 h-4 text-emerald-600 rounded">
+            </td>
+            <td class="px-4 py-3.5 text-center no-admin-print">
+              <button onclick="cancelApplicationByAdmin('${item.id}')" class="text-xs px-2.5 py-1 text-rose-600 hover:bg-rose-50 rounded-lg transition font-bold">
+                <i class="fa-solid fa-trash-can mr-1"></i>취소
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function cancelApplicationByAdmin(id) {
+      const idx = dinnerApplications.findIndex(a => a.id === id);
+      if (idx === -1) return;
+      const target = dinnerApplications[idx];
+
+      dinnerApplications.splice(idx, 1);
+      persistState();
+      updateCapacityUI();
+      renderApplicantList();
+      renderTeacherRoster();
+      renderAdminRoster();
+      updateSettlementTable();
+      showToast(`[${target.childName}] 원아의 석식 신청이 취소되어 정원이 복원되었습니다.`, 'info');
+    }
+
+    function printAdminRoster() {
+      const printCenter = document.getElementById('admin-print-center-name');
+      const printMeta = document.getElementById('admin-print-meta-info');
+      if (printCenter) printCenter.textContent = DaycareConfig.centerName;
+      if (printMeta) {
+        const weekSelect = document.getElementById('admin-filter-week');
+        const selectedWeekVal = weekSelect ? weekSelect.value : 'all';
+        const foundWeek = availableWeeks.find(w => w.id === selectedWeekVal);
+        const weekLabel = foundWeek ? foundWeek.label : '전체 주차 종합';
+        printMeta.textContent = `기준: ${weekLabel} | 인쇄일시: ${new Date().toLocaleString('ko-KR')}`;
+      }
+      document.body.classList.add('printing-admin-roster');
+      window.print();
+      setTimeout(() => document.body.classList.remove('printing-admin-roster'), 1000);
+    }
+
+    function updateSettlementTable() {
+      const monthSelect = document.getElementById('filter-month');
+      const classSelect = document.getElementById('filter-class');
+      const settleModeSelect = document.getElementById('filter-settle-mode');
+      if (!monthSelect || !classSelect) return;
+
+      const selectedMonth = monthSelect.value || 'all';
+      const selectedClass = classSelect.value || 'all';
+      const settleMode = settleModeSelect ? settleModeSelect.value : 'served';
+      const unitPrice = DaycareConfig.mealPrice || 4500;
+
+      let filtered = dinnerApplications.map(normalizeServedData);
+      if (selectedMonth !== 'all') {
+        filtered = filtered.filter(a => a.month === selectedMonth || (a.weekId && a.weekId.startsWith(selectedMonth)));
+      }
+      if (selectedClass !== 'all') {
+        filtered = filtered.filter(a => a.className === selectedClass);
+      }
+
+      const childAgg = {};
+      filtered.forEach(item => {
+        normalizeServedData(item);
+        const key = `${item.className}_${item.childName}_${item.parentName}`;
+        if (!childAgg[key]) {
+          childAgg[key] = {
+            className: item.className,
+            childName: item.childName,
+            parentName: item.parentName,
+            phone: item.phone,
+            totalAppliedMeals: 0,
+            totalServedMeals: 0,
+            records: []
+          };
+        }
+        childAgg[key].totalAppliedMeals += (item.daysCount || 0);
+        childAgg[key].totalServedMeals += (item.servedCount || 0);
+        childAgg[key].records.push(item);
+      });
+
+      let aggregatedList = Object.values(childAgg);
+
+      const totalAppliedSum = aggregatedList.reduce((sum, c) => sum + c.totalAppliedMeals, 0);
+      const totalServedSum = aggregatedList.reduce((sum, c) => sum + c.totalServedMeals, 0);
+      const billableMealsSum = settleMode === 'served' ? totalServedSum : totalAppliedSum;
+      const totalAmountSum = billableMealsSum * unitPrice;
+
+      const activeChildrenCount = settleMode === 'served'
+        ? aggregatedList.filter(c => c.totalServedMeals > 0).length
+        : aggregatedList.length;
+
+      const statMeals = document.getElementById('stat-total-meals');
+      const statChildren = document.getElementById('stat-total-children');
+      const statAmount = document.getElementById('stat-total-amount');
+
+      if (statMeals) statMeals.textContent = (settleMode === 'served' ? totalServedSum : totalAppliedSum).toLocaleString();
+      if (statChildren) statChildren.textContent = activeChildrenCount;
+      if (statAmount) statAmount.textContent = totalAmountSum.toLocaleString();
+
+      const tbody = document.getElementById('settlement-tbody');
+      if (!tbody) return;
+
+      if (aggregatedList.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="10" class="px-6 py-12 text-center text-slate-400 text-xs">
+              선택하신 조건(${selectedMonth === 'all' ? '전체 월' : selectedMonth})에 해당하는 결산 내역이 없습니다.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = aggregatedList.map(child => {
+        const billableCount = settleMode === 'served' ? child.totalServedMeals : child.totalAppliedMeals;
+        const totalCost = billableCount * unitPrice;
+        const encoded = encodeURIComponent(JSON.stringify({ ...child, settleMode }));
+
+        let statusText = '미배식';
+        let statusBadge = 'bg-slate-100 text-slate-600';
+        if (child.totalServedMeals === child.totalAppliedMeals && child.totalAppliedMeals > 0) {
+          statusText = '전체 배식완료';
+          statusBadge = 'bg-emerald-100 text-emerald-800 border border-emerald-300';
+        } else if (child.totalServedMeals > 0) {
+          statusText = `일부 배식 (${child.totalServedMeals}/${child.totalAppliedMeals}식)`;
+          statusBadge = 'bg-amber-100 text-amber-800 border border-amber-300';
+        }
+
+        return `
+          <tr class="hover:bg-slate-50 transition">
+            <td class="px-4 py-3.5 font-medium text-slate-900">${child.className}</td>
+            <td class="px-4 py-3.5 font-bold text-slate-800">${child.childName}</td>
+            <td class="px-4 py-3.5 text-slate-600">${child.parentName}</td>
+            <td class="px-4 py-3.5 font-mono text-xs text-slate-500">${child.phone}</td>
+            <td class="px-4 py-3.5 text-center font-mono text-slate-500">${child.totalAppliedMeals}식</td>
+            <td class="px-4 py-3.5 text-center font-bold text-emerald-600 font-mono bg-emerald-50/40">${child.totalServedMeals}식</td>
+            <td class="px-4 py-3.5 text-center">
+              <span class="px-2 py-0.5 rounded text-[11px] font-bold ${statusBadge}">
+                ${statusText}
+              </span>
+            </td>
+            <td class="px-4 py-3.5 text-right font-mono text-slate-500">${unitPrice.toLocaleString()}원</td>
+            <td class="px-4 py-3.5 text-right font-bold text-slate-900 font-mono text-base ${billableCount === 0 ? 'text-slate-400' : 'text-emerald-700'}">
+              ${totalCost.toLocaleString()}원
+            </td>
+            <td class="px-4 py-3.5 text-center">
+              <button onclick="openBillModal('${encoded}')" class="px-2.5 py-1 text-xs rounded-lg ${billableCount > 0 ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800' : 'bg-slate-100 hover:bg-slate-200 text-slate-500'} font-bold transition">
+                <i class="fa-solid fa-receipt mr-1"></i>고지서/영수증
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function openBillModal(encodedData) {
+      const data = JSON.parse(decodeURIComponent(encodedData));
+      const unitPrice = DaycareConfig.mealPrice;
+      const settleMode = data.settleMode || 'served';
+      
+      const totalBillableMeals = settleMode === 'served' ? data.totalServedMeals : data.totalAppliedMeals;
+      const totalCost = totalBillableMeals * unitPrice;
+
+      document.getElementById('bill-center-name').textContent = DaycareConfig.centerName;
+      document.getElementById('bill-footer-center').textContent = `${DaycareConfig.centerName} 원장`;
+      document.getElementById('bill-account-info').textContent = DaycareConfig.bankAccount;
+      document.getElementById('bill-issue-date').textContent = `발행일자: ${new Date().toISOString().slice(0, 10)}`;
+
+      document.getElementById('bill-class').textContent = data.className;
+      document.getElementById('bill-child').textContent = data.childName;
+      document.getElementById('bill-parent').textContent = data.parentName;
+      document.getElementById('bill-phone').textContent = data.phone;
+
+      const tbody = document.getElementById('bill-table-body');
+      tbody.innerHTML = data.records.map(r => {
+        normalizeServedData(r);
+        const billMeals = settleMode === 'served' ? (r.servedCount || 0) : r.daysCount;
+        const lineCost = billMeals * unitPrice;
+        const servedDaysStr = r.servedDays && r.servedDays.length > 0 ? r.servedDays.join(', ') : '배식 미진행';
+
+        return `
+        <tr>
+          <td class="py-2 px-2 font-medium">긴급 석식 급식비</td>
+          <td class="py-2 px-2 text-center font-mono text-xs">${r.weekId}</td>
+          <td class="py-2 px-2 text-center text-xs">
+            ${r.days.join(', ')} (${r.daysCount}식)
+          </td>
+          <td class="py-2 px-2 text-center text-xs font-bold text-emerald-700">
+            ${servedDaysStr} (${r.servedCount || 0}식)
+          </td>
+          <td class="py-2 px-2 text-right font-mono">${unitPrice.toLocaleString()}원</td>
+          <td class="py-2 px-2 text-right font-mono font-bold text-slate-900">${lineCost.toLocaleString()}원</td>
+        </tr>
+      `;
+      }).join('');
+
+      document.getElementById('bill-total-price').textContent = `${totalCost.toLocaleString()} 원 (${totalBillableMeals}식)`;
+      document.getElementById('bill-modal').classList.remove('hidden');
+    }
+
+    function closeBillModal() {
+      document.getElementById('bill-modal').classList.add('hidden');
+    }
+
+    function printBillDirectly() {
+      document.body.classList.add('printing-bill');
+      window.print();
+      setTimeout(() => document.body.classList.remove('printing-bill'), 1000);
+    }
+
+    function printTeacherRoster() {
+      document.body.classList.add('printing-roster');
+      window.print();
+      setTimeout(() => document.body.classList.remove('printing-roster'), 1000);
+    }
+
+    function printSettlementReport() {
+      document.body.classList.add('printing-settle');
+      window.print();
+      setTimeout(() => document.body.classList.remove('printing-settle'), 1000);
+    }
+
+    function exportToCSV() {
+      const selectedMonth = document.getElementById('filter-month').value;
+      const unitPrice = DaycareConfig.mealPrice;
+      const filtered = dinnerApplications.filter(a => a.month === selectedMonth);
+
+      if (filtered.length === 0) {
+        showToast('다운로드할 데이터가 없습니다.', 'warning');
+        return;
+      }
+
+      let csvContent = "\uFEFF어린이집명,반명,원아명,보호자명,연락처,신청주차,신청요일,신청식수,배식완료요일,배식완료식수,배식상태,식대단가,최종청구금액(실식수기준)\n";
+      filtered.forEach(r => {
+        normalizeServedData(r);
+        const servedDaysStr = r.servedDays && r.servedDays.length > 0 ? r.servedDays.join('/') : '없음';
+        const servedCount = r.servedCount || 0;
+        const totalCost = servedCount * unitPrice;
+        csvContent += `"${DaycareConfig.centerName}","${r.className}","${r.childName}","${r.parentName}","${r.phone}","${r.weekId}","${r.days.join('/')}",${r.daysCount},"${servedDaysStr}",${servedCount},"${r.status}",${unitPrice},${totalCost}\n`;
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${DaycareConfig.centerName}_석식결산(실배식기준)_${selectedMonth}.csv`;
+      link.click();
+      showToast('실제 배식 완료 기준 결산 엑셀(CSV)이 다운로드되었습니다.', 'success');
+    }
+
+    function toggleTimerConfigMode(mode) {
+      const weeklyBlock = document.getElementById('block-timer-weekly');
+      const customBlock = document.getElementById('block-timer-custom');
+      if (mode === 'weekly') {
+        if (weeklyBlock) weeklyBlock.classList.remove('hidden');
+        if (customBlock) customBlock.classList.add('hidden');
+      } else {
+        if (weeklyBlock) weeklyBlock.classList.add('hidden');
+        if (customBlock) customBlock.classList.remove('hidden');
+      }
+    }
+
+    function initSettingForm() {
+      const elCenterName = document.getElementById('cfg-center-name');
+      if (elCenterName) elCenterName.value = DaycareConfig.centerName || '';
+
+      const elCenterTel = document.getElementById('cfg-center-tel');
+      if (elCenterTel) elCenterTel.value = DaycareConfig.centerTel || '';
+
+      const elCap = document.getElementById('cfg-capacity');
+      if (elCap) elCap.value = DaycareConfig.maxCapacity || 20;
+
+      const elMealPrice = document.getElementById('cfg-meal-price');
+      if (elMealPrice) elMealPrice.value = DaycareConfig.mealPrice || 4500;
+
+      const elClasses = document.getElementById('cfg-classes');
+      if (elClasses) elClasses.value = Array.isArray(DaycareConfig.classes) ? DaycareConfig.classes.join(', ') : '';
+
+      const elBank = document.getElementById('cfg-bank-account');
+      if (elBank) elBank.value = DaycareConfig.bankAccount || '';
+
+      const elMealTime = document.getElementById('cfg-meal-time');
+      if (elMealTime) elMealTime.value = DaycareConfig.mealTime || '';
+
+      const elTeacherPin = document.getElementById('cfg-teacher-pin');
+      if (elTeacherPin) elTeacherPin.value = DaycareConfig.teacherPin || '1234';
+
+      const elAdminPwd = document.getElementById('cfg-admin-pwd');
+      if (elAdminPwd) elAdminPwd.value = DaycareConfig.adminPassword || 'admin1234';
+
+      const timerMode = DaycareConfig.timerMode || 'weekly';
+      const weeklyRadio = document.getElementById('cfg-timer-mode-weekly');
+      const customRadio = document.getElementById('cfg-timer-mode-custom');
+      if (timerMode === 'weekly' && weeklyRadio) weeklyRadio.checked = true;
+      if (timerMode === 'custom' && customRadio) customRadio.checked = true;
+      toggleTimerConfigMode(timerMode);
+
+      const elWeeklyDay = document.getElementById('cfg-weekly-close-day');
+      if (elWeeklyDay) elWeeklyDay.value = DaycareConfig.weeklyCloseDay ?? 5;
+
+      const elWeeklyTime = document.getElementById('cfg-weekly-close-time');
+      if (elWeeklyTime) elWeeklyTime.value = DaycareConfig.weeklyCloseTime || "18:00";
+
+      const elCustomDt = document.getElementById('cfg-custom-close-datetime');
+      if (elCustomDt) elCustomDt.value = DaycareConfig.customCloseDatetime || "";
+
+      const elCancel = document.getElementById('cfg-cancel-deadline');
+      if (elCancel) elCancel.value = DaycareConfig.cancelDeadline || "";
+
+      const elUrgentNotice = document.getElementById('cfg-urgent-notice');
+      if (elUrgentNotice) elUrgentNotice.value = DaycareConfig.urgentNotice || "";
+
+      const elIsOpen = document.getElementById('cfg-is-open');
+      if (elIsOpen) elIsOpen.value = String(DaycareConfig.isApplyOpen);
+    }
+
+    function saveCustomSettings(e) {
+      e.preventDefault();
+      DaycareConfig.centerName = document.getElementById('cfg-center-name').value.trim();
+      DaycareConfig.centerTel = document.getElementById('cfg-center-tel').value.trim();
+      DaycareConfig.maxCapacity = parseInt(document.getElementById('cfg-capacity').value, 10) || 20;
+      DaycareConfig.mealPrice = parseInt(document.getElementById('cfg-meal-price').value, 10) || 4500;
+      DaycareConfig.bankAccount = document.getElementById('cfg-bank-account').value.trim();
+      DaycareConfig.mealTime = document.getElementById('cfg-meal-time').value.trim();
+      DaycareConfig.teacherPin = document.getElementById('cfg-teacher-pin').value.trim() || '1234';
+      DaycareConfig.adminPassword = document.getElementById('cfg-admin-pwd').value.trim() || 'admin1234';
+
+      const isCustomMode = document.getElementById('cfg-timer-mode-custom')?.checked;
+      DaycareConfig.timerMode = isCustomMode ? 'custom' : 'weekly';
+      DaycareConfig.weeklyCloseDay = parseInt(document.getElementById('cfg-weekly-close-day')?.value ?? 5, 10);
+      DaycareConfig.weeklyCloseTime = document.getElementById('cfg-weekly-close-time')?.value || "18:00";
+      DaycareConfig.customCloseDatetime = document.getElementById('cfg-custom-close-datetime')?.value || "";
+      DaycareConfig.cancelDeadline = document.getElementById('cfg-cancel-deadline')?.value.trim() || DaycareConfig.cancelDeadline;
+      DaycareConfig.urgentNotice = document.getElementById('cfg-urgent-notice')?.value.trim() || DaycareConfig.urgentNotice;
+      DaycareConfig.isApplyOpen = document.getElementById('cfg-is-open')?.value === 'true';
+
+      const rawClasses = document.getElementById('cfg-classes').value;
+      DaycareConfig.classes = rawClasses.split(',').map(s => s.trim()).filter(Boolean);
+
+      persistState();
+      syncDaycareUI();
+      populateClassSelectors();
+      updateCapacityUI();
+      renderTeacherRoster();
+      renderAdminRoster();
+      updateSettlementTable();
+      startCountdownTimer();
+      showToast('어린이집 맞춤 설정과 마감 카운트다운 타이머가 성공적으로 저장되었습니다!', 'success');
+    }
+
+    function startCountdownTimer() {
+      if (countdownIntervalId) clearInterval(countdownIntervalId);
+
+      function updateClock() {
+        const now = new Date();
+        let targetDeadline = null;
+
+        if (DaycareConfig.timerMode === 'custom' && DaycareConfig.customCloseDatetime) {
+          targetDeadline = new Date(DaycareConfig.customCloseDatetime);
+        } else {
+          const targetDayOfWeek = DaycareConfig.weeklyCloseDay ?? 5;
+          const [hStr, mStr] = (DaycareConfig.weeklyCloseTime || "18:00").split(':');
+          const targetHour = parseInt(hStr, 10) || 18;
+          const targetMinute = parseInt(mStr, 10) || 0;
+
+          targetDeadline = new Date(now);
+          targetDeadline.setHours(targetHour, targetMinute, 0, 0);
+
+          let dayDiff = targetDayOfWeek - now.getDay();
+          if (dayDiff < 0 || (dayDiff === 0 && now >= targetDeadline)) {
+            dayDiff += 7;
+          }
+          targetDeadline.setDate(targetDeadline.getDate() + dayDiff);
+        }
+
+        const diffMs = targetDeadline - now;
+        const dEl = document.getElementById('timer-days');
+        const hEl = document.getElementById('timer-hours');
+        const mEl = document.getElementById('timer-minutes');
+        const sEl = document.getElementById('timer-seconds');
+        const statusText = document.getElementById('countdown-status-text');
+        const deadlineInfo = document.getElementById('countdown-deadline-info');
+        const dot = document.getElementById('countdown-dot');
+
+        if (!DaycareConfig.isApplyOpen) {
+          isTimeExpired = true;
+          if (statusText) statusText.textContent = '관리자 마감';
+          if (dot) dot.className = 'w-2 h-2 rounded-full bg-rose-400';
+          if (dEl) dEl.textContent = '00';
+          if (hEl) hEl.textContent = '00';
+          if (mEl) mEl.textContent = '00';
+          if (sEl) sEl.textContent = '00';
+          updateCapacityUI();
+          return;
+        }
+
+        if (diffMs <= 0) {
+          isTimeExpired = true;
+          if (statusText) statusText.textContent = '접수 마감됨';
+          if (dot) dot.className = 'w-2 h-2 rounded-full bg-rose-400';
+          if (dEl) dEl.textContent = '00';
+          if (hEl) hEl.textContent = '00';
+          if (mEl) mEl.textContent = '00';
+          if (sEl) sEl.textContent = '00';
+          updateCapacityUI();
+        } else {
+          isTimeExpired = false;
+          const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+          const hours = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
+          const minutes = Math.floor((diffMs / (1000 * 60)) % 60);
+          const seconds = Math.floor((diffMs / 1000) % 60);
+
+          if (dEl) dEl.textContent = String(days).padStart(2, '0');
+          if (hEl) hEl.textContent = String(hours).padStart(2, '0');
+          if (mEl) mEl.textContent = String(minutes).padStart(2, '0');
+          if (sEl) sEl.textContent = String(seconds).padStart(2, '0');
+
+          if (diffMs < 3 * 60 * 60 * 1000) {
+            if (statusText) statusText.textContent = '마감 임박!';
+            if (dot) dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
+          } else {
+            if (statusText) statusText.textContent = '정상 접수 중';
+            if (dot) dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+          }
+
+          if (deadlineInfo) {
+            const mm = String(targetDeadline.getMonth() + 1).padStart(2, '0');
+            const dd = String(targetDeadline.getDate()).padStart(2, '0');
+            const hh = String(targetDeadline.getHours()).padStart(2, '0');
+            const min = String(targetDeadline.getMinutes()).padStart(2, '0');
+            deadlineInfo.textContent = `(${mm}.${dd} ${hh}:${min} 마감)`;
+          }
+        }
+      }
+
+      updateClock();
+      countdownIntervalId = setInterval(updateClock, 1000);
+    }
+
+    function downloadJsonBackup() {
+      const backupData = {
+        config: DaycareConfig,
+        applications: dinnerApplications,
+        exportedAt: new Date().toISOString()
+      };
+      const jsonStr = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${DaycareConfig.centerName}_석식데이터백업_${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      showToast('전체 데이터 백업 파일이 저장되었습니다.', 'success');
+    }
+
+    function uploadJsonBackup(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          if (parsed.config && parsed.applications) {
+            DaycareConfig = parsed.config;
+            dinnerApplications = parsed.applications;
+            persistState();
+            syncDaycareUI();
+            populateWeekOptions();
+            populateClassSelectors();
+            updateCapacityUI();
+            renderApplicantList();
+            renderTeacherRoster();
+            renderAdminRoster();
+            updateSettlementTable();
+            initSettingForm();
+            startCountdownTimer();
+            showToast('백업 파일에서 데이터가 완벽히 복원되었습니다!', 'success');
+          } else {
+            showToast('올바르지 않은 백업 파일 형식입니다.', 'error');
+          }
+        } catch (err) {
+          showToast('JSON 파일을 파싱하는 데 실패했습니다.', 'error');
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = '';
+    }
+
+    function switchRole(role) {
+      if (role === 'parent') {
+        activateTabUI(role);
+        return;
+      }
+      if (role === 'teacher') {
+        if (!currentAuthSession || (currentAuthSession.role !== 'teacher' && currentAuthSession.role !== 'admin')) {
+          pendingTargetRole = 'teacher';
+          openAuthModal('teacher');
+          return;
+        }
+        activateTabUI(role);
+        renderTeacherRoster();
+        return;
+      }
+      if (role === 'admin') {
+        if (!currentAuthSession || currentAuthSession.role !== 'admin') {
+          pendingTargetRole = 'admin';
+          openAuthModal('admin');
+          return;
+        }
+        activateTabUI(role);
+        switchAdminSubtab('roster');
+        return;
+      }
+    }
+
+    function activateTabUI(role) {
+      ['parent', 'teacher', 'admin'].forEach(v => {
+        const viewEl = document.getElementById(`view-${v}`);
+        if (viewEl) viewEl.classList.add('hidden');
+        const btn = document.getElementById(`nav-tab-${v}`);
+        if (btn) btn.className = 'tab-btn px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition flex items-center space-x-1.5 whitespace-nowrap';
+      });
+
+      const activeView = document.getElementById(`view-${role}`);
+      if (activeView) activeView.classList.remove('hidden');
+
+      const activeBtn = document.getElementById(`nav-tab-${role}`);
+      if (activeBtn) {
+        if (role === 'parent') {
+          activeBtn.className = 'tab-btn px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center space-x-1.5 bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap';
+        } else if (role === 'teacher') {
+          activeBtn.className = 'tab-btn px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center space-x-1.5 bg-sky-50 text-sky-700 border border-sky-200 whitespace-nowrap';
+        } else if (role === 'admin') {
+          activeBtn.className = 'tab-btn px-3 py-2 rounded-lg text-xs sm:text-sm font-semibold transition flex items-center space-x-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap';
+        }
+      }
+    }
+
+    function openAuthModal(targetRole = 'teacher') {
+      selectAuthRole(targetRole);
+      const input = document.getElementById('auth-input-pwd');
+      if (input) input.value = '';
+      const modal = document.getElementById('auth-modal');
+      if (modal) modal.classList.remove('hidden');
+      setTimeout(() => { if (input) input.focus(); }, 100);
+    }
+
+    function closeAuthModal() {
+      const modal = document.getElementById('auth-modal');
+      if (modal) modal.classList.add('hidden');
+      pendingTargetRole = null;
+    }
+
+    function selectAuthRole(role) {
+      selectedAuthModalRole = role;
+      const teacherBtn = document.getElementById('auth-role-teacher-btn');
+      const adminBtn = document.getElementById('auth-role-admin-btn');
+      const classBlock = document.getElementById('auth-teacher-class-block');
+      const title = document.getElementById('auth-modal-title');
+      const subtitle = document.getElementById('auth-modal-subtitle');
+      const pwdLabel = document.getElementById('auth-pwd-label');
+      const confirmBtn = document.getElementById('btn-auth-confirm');
+      const iconWrap = document.getElementById('auth-modal-icon-wrap');
+      const icon = document.getElementById('auth-modal-icon');
+
+      if (role === 'teacher') {
+        if (teacherBtn) teacherBtn.className = 'py-2.5 px-3 rounded-xl border-2 border-sky-500 bg-sky-50 text-sky-800 text-xs font-bold flex items-center justify-center gap-1.5 transition';
+        if (adminBtn) adminBtn.className = 'py-2.5 px-3 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 transition';
+        if (classBlock) classBlock.classList.remove('hidden');
+        if (title) title.textContent = '담임교사 로그인';
+        if (subtitle) subtitle.textContent = '반별 석식 신청 현황 및 배식/하원 점검';
+        if (pwdLabel) pwdLabel.textContent = '교직원 인증 PIN (기본: 1234)';
+        if (confirmBtn) confirmBtn.className = 'w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-sm shadow-md transition';
+        const textEl = document.getElementById('btn-auth-text');
+        if (textEl) textEl.textContent = '담임교사 로그인';
+        if (iconWrap) iconWrap.className = 'w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center text-sm font-bold';
+        if (icon) icon.className = 'fa-solid fa-chalkboard-user';
+      } else {
+        if (adminBtn) adminBtn.className = 'py-2.5 px-3 rounded-xl border-2 border-emerald-500 bg-emerald-50 text-emerald-800 text-xs font-bold flex items-center justify-center gap-1.5 transition';
+        if (teacherBtn) teacherBtn.className = 'py-2.5 px-3 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 transition';
+        if (classBlock) classBlock.classList.add('hidden');
+        if (title) title.textContent = '총괄관리자 로그인';
+        if (subtitle) subtitle.textContent = '월말 결산 승인, 식대 고지서 발급 및 기관 환경설정';
+        if (pwdLabel) pwdLabel.textContent = '총괄관리자 비밀번호 (기본: admin1234)';
+        if (confirmBtn) confirmBtn.className = 'w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md transition';
+        const textEl = document.getElementById('btn-auth-text');
+        if (textEl) textEl.textContent = '총괄관리자 인증 및 로그인';
+        if (iconWrap) iconWrap.className = 'w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-sm font-bold';
+        if (icon) icon.className = 'fa-solid fa-user-shield';
+      }
+    }
+
+    function handleAuthSubmit(e) {
+      e.preventDefault();
+      const enteredPwd = document.getElementById('auth-input-pwd').value.trim();
+
+      if (selectedAuthModalRole === 'teacher') {
+        const correctPin = DaycareConfig.teacherPin || '1234';
+        if (enteredPwd !== correctPin) {
+          showToast('담임교사 인증 PIN이 올바르지 않습니다. (기본: 1234)', 'error');
+          return;
+        }
+
+        const chosenClass = document.getElementById('auth-teacher-class').value;
+        currentAuthSession = {
+          role: 'teacher',
+          name: chosenClass ? `${chosenClass} 담임` : '교직원',
+          className: chosenClass || 'all'
+        };
+
+        if (chosenClass) {
+          const filterClass = document.getElementById('teacher-filter-class');
+          if (filterClass) filterClass.value = chosenClass;
+        }
+
+        showToast(`${currentAuthSession.name}님 환영합니다.`, 'success');
+      } else {
+        const correctAdminPwd = DaycareConfig.adminPassword || 'admin1234';
+        if (enteredPwd !== correctAdminPwd) {
+          showToast('총괄관리자 비밀번호가 일치하지 않습니다. (기본: admin1234)', 'error');
+          return;
+        }
+
+        currentAuthSession = {
+          role: 'admin',
+          name: '총괄 원장/관리자'
+        };
+
+        showToast('총괄 관리자로 인증되었습니다.', 'success');
+      }
+
+      closeAuthModal();
+      updateAuthUI();
+
+      const target = pendingTargetRole || selectedAuthModalRole;
+      activateTabUI(target);
+      if (target === 'teacher') renderTeacherRoster();
+      if (target === 'admin') {
+        renderAdminRoster();
+        updateSettlementTable();
+      }
+    }
+
+    function handleLogout() {
+      currentAuthSession = null;
+      updateAuthUI();
+      switchRole('parent');
+      showToast('로그아웃되었습니다.', 'info');
+    }
+
+    function updateAuthUI() {
+      const statusBar = document.getElementById('auth-status-bar');
+      const userBadge = document.getElementById('auth-user-badge');
+      const lockTeacher = document.getElementById('lock-icon-teacher');
+      const lockAdmin = document.getElementById('lock-icon-admin');
+
+      if (!statusBar || !userBadge || !lockTeacher || !lockAdmin) return;
+
+      if (currentAuthSession) {
+        statusBar.classList.remove('hidden');
+        statusBar.classList.add('flex');
+        userBadge.textContent = currentAuthSession.name;
+        userBadge.className = currentAuthSession.role === 'admin' 
+          ? 'text-xs font-bold px-2 py-1 rounded-lg bg-emerald-100 text-emerald-800 whitespace-nowrap mr-1 flex items-center gap-1'
+          : 'text-xs font-bold px-2 py-1 rounded-lg bg-sky-100 text-sky-800 whitespace-nowrap mr-1 flex items-center gap-1';
+
+        if (currentAuthSession.role === 'admin') {
+          lockTeacher.className = 'fa-solid fa-unlock text-[10px] text-emerald-500 ml-0.5';
+          lockAdmin.className = 'fa-solid fa-unlock text-[10px] text-emerald-500 ml-0.5';
+        } else {
+          lockTeacher.className = 'fa-solid fa-unlock text-[10px] text-sky-500 ml-0.5';
+          lockAdmin.className = 'fa-solid fa-lock text-[10px] text-slate-400 ml-0.5';
+        }
+      } else {
+        statusBar.classList.add('hidden');
+        statusBar.classList.remove('flex');
+        lockTeacher.className = 'fa-solid fa-lock text-[10px] text-slate-400 ml-0.5';
+        lockAdmin.className = 'fa-solid fa-lock text-[10px] text-slate-400 ml-0.5';
+      }
+    }
+
+    function refreshData() {
+      updateCapacityUI();
+      renderApplicantList();
+      showToast('신청 현황이 갱신되었습니다.', 'info');
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+
+      const toast = document.createElement('div');
+      let bg = 'bg-slate-900 text-white';
+      let icon = 'fa-circle-info';
+      if (type === 'success') { bg = 'bg-emerald-600 text-white'; icon = 'fa-circle-check'; }
+      else if (type === 'warning') { bg = 'bg-amber-600 text-white'; icon = 'fa-triangle-exclamation'; }
+      else if (type === 'error') { bg = 'bg-rose-600 text-white'; icon = 'fa-circle-xmark'; }
+
+      toast.className = `${bg} px-4 py-3 rounded-xl shadow-xl flex items-center space-x-2.5 text-xs sm:text-sm font-medium transition-all duration-300 transform translate-y-2 pointer-events-auto`;
+      toast.innerHTML = `<i class="fa-solid ${icon}"></i><span>${message}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => { toast.classList.remove('translate-y-2'); }, 10);
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      syncDaycareUI();
+      populateWeekOptions();
+      populateClassSelectors();
+      updateCapacityUI();
+      renderApplicantList();
+      renderTeacherRoster();
+      renderAdminRoster();
+      updateSettlementTable();
+      setupDateSubtext();
+      initSettingForm();
+      updateAuthUI();
+      startCountdownTimer();
+      updateFormFeeCalculation();
+    });
+  </script>
+</body>
+</html>
